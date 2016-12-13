@@ -8,225 +8,191 @@ defmodule Module do
   After a module is compiled, using many of the functions in
   this module will raise errors, since it is out of their scope
   to inspect runtime data. Most of the runtime data can be inspected
-  via the `__info__(attr)` function attached to each compiled module.
+  via the `__info__/1` function attached to each compiled module.
 
   ## Module attributes
 
   Each module can be decorated with one or more attributes. The following ones
   are currently defined by Elixir:
 
-    * `@after_compile`
+  ### @after_compile
 
-      A hook that will be invoked right after the current module is compiled.
-      Accepts a module or a tuple `{<module>, <function atom>}`.
-      See the "Compile callbacks" section below.
+  A hook that will be invoked right after the current module is compiled.
+  Accepts a module or a tuple `{<module>, <function atom>}`.
+  See the "Compile callbacks" section below.
 
-    * `@before_compile`
+  ### @before_compile
 
-      A hook that will be invoked before the module is compiled.
-      Accepts a module or a tuple `{<module>, <function/macro atom>}`.
-      See the "Compile callbacks" section below.
+  A hook that will be invoked before the module is compiled.
+  Accepts a module or a tuple `{<module>, <function/macro atom>}`.
+  See the "Compile callbacks" section below.
 
-    * `@behaviour` (notice the British spelling)
+  ### @behaviour (notice the British spelling)
 
-      Behaviours can be referenced by modules to ensure they implement
-      required specific function signatures defined by `@callback`.
+  Behaviours can be referenced by modules to ensure they implement
+  required specific function signatures defined by `@callback`.
 
-      For example, you can specify the URI.Parser behaviour as follows:
+  For example, you could specify a `URI.Parser` behaviour as follows:
 
-          defmodule URI.Parser do
-            @doc "Parses the given URL"
-            @callback parse(uri_info :: URI.t) :: URI.t
+      defmodule URI.Parser do
+        @doc "Defines a default port"
+        @callback default_port() :: integer
 
-            @doc "Defines a default port"
-            @callback default_port() :: integer
+        @doc "Parses the given URL"
+        @callback parse(uri_info :: URI.t) :: URI.t
+      end
+
+  And then a module may use it as:
+
+      defmodule URI.HTTP do
+        @behaviour URI.Parser
+        def default_port(), do: 80
+        def parse(info), do: info
+      end
+
+  If the behaviour changes or `URI.HTTP` does not implement
+  one of the callbacks, a warning will be raised.
+
+  ### @compile
+
+  Defines options for module compilation. This is used to configure
+  both Elixir and Erlang compilers, as any other compilation pass
+  added by external tools. For example:
+
+      defmodule M do
+        @compile {:inline, my_fun: 1}
+
+        def my_fun(arg) do
+          to_string(arg)
+        end
+      end
+
+  Multiple uses of `@compile` will accumulate instead of overriding
+  previous ones. See the "Compile options" section below.
+
+  ### @doc
+
+  Provides documentation for the function or macro that follows the
+  attribute.
+
+  Accepts a string (often a heredoc) or `false` where `@doc false` will
+  make the function/macro invisible to the documentation extraction tools
+  like ExDoc. For example:
+
+      defmodule M do
+        @doc "Hello world"
+        def hello do
+          "world"
+        end
+
+        @doc """
+        Sums `a` to `b`.
+        """
+        def sum(a, b) do
+          a + b
+        end
+      end
+
+  ### @dialyzer
+
+  Defines warnings to request or suppress when using a version of
+  `:dialyzer` that supports module attributes.
+
+  Accepts an atom, a tuple, or a list of atoms and tuples. For example:
+
+      defmodule M do
+        @dialyzer {:nowarn_function, my_fun: 1}
+
+        def my_fun(arg) do
+          M.not_a_function(arg)
+        end
+      end
+
+  For the list of supported warnings, see
+  [`:dialyzer` module](http://www.erlang.org/doc/man/dialyzer.html).
+
+  Multiple uses of `@dialyzer` will accumulate instead of overriding
+  previous ones.
+
+  ### @external_resource
+
+  Specifies an external resource to the current module.
+
+  Many times a module embeds information from an external file. This
+  attribute allows the module to annotate which external resources
+  have been used.
+
+  Tools like Mix may use this information to ensure the module is
+  recompiled in case any of the external resources change.
+
+  ### @file
+
+  Changes the filename used in stacktraces for the function or macro that
+  follows the attribute, such as:
+
+      defmodule M do
+        @doc "Hello world"
+        @file "hello.ex"
+        def hello do
+          "world"
+        end
+      end
+
+  ### @moduledoc
+
+  Provides documentation for the current module, such as:
+
+      defmodule M do
+        @moduledoc """
+        A very useful module
+        """
+      end
+
+  Accepts a string (which is often a heredoc) or `false` where
+  `@moduledoc false` will make the module invisible to the
+  documentation extraction tools like ExDoc.
+
+  ### @on_definition
+
+  A hook that will be invoked when each function or macro in the current
+  module is defined. Useful when annotating functions.
+
+  Accepts a module or a tuple `{<module>, <function atom>}`. See the
+  "Compile callbacks" section below.
+
+  ### @on_load
+
+  A hook that will be invoked whenever the module is loaded.
+
+  Accepts a function atom of a function in the current module. The function
+  must have arity 0 (no arguments) and has to return `:ok`, otherwise the
+  loading of the module will be aborted. For example:
+
+      defmodule M do
+        @on_load :load_check
+
+        def load_check do
+          if some_condition() do
+            :ok
+          else
+            :abort
           end
+        end
 
-      And then a module may use it as:
+        def some_condition do
+          false
+        end
+      end
 
-          defmodule URI.HTTP do
-            @behaviour URI.Parser
-            def default_port(), do: 80
-            def parse(info), do: info
-          end
+  ### @vsn
 
-      If the behaviour changes or URI.HTTP does not implement one of the
-      callbacks, a warning will be raised.
+  Specify the module version. Accepts any valid Elixir value, for example:
 
-      Specifies an OTP or user-defined behaviour.
+      defmodule M do
+        @vsn "1.0"
+      end
 
-      ### Example
-
-          defmodule M do
-            @behaviour :gen_event
-
-            # ...
-          end
-
-    * `@callback`, `@macrocallback`, and `@optional_callbacks`
-
-      These attributes are used to define a behaviour (as shown in the
-      documentation for `@behaviour` above). `@callback` defines a function
-      callback, `@macrocallback` defines a macro callback, and
-      `@optional_callbacks` specifies which callbacks and macrocallbacks are
-      optional.
-
-    * `@compile`
-
-      Defines options for module compilation. This is used to configure
-      both Elixir and Erlang compilers, as any other compilation pass
-      added by external tools.
-
-      Multiple uses of `@compile` will accumulate instead of overriding
-      previous ones. See the "Compile options" section below.
-
-      ### Example
-
-          defmodule M do
-            @compile {:inline, myfun: 1}
-
-            def myfun(arg) do
-              to_string(arg)
-            end
-          end
-
-    * `@doc`
-
-      Provides documentation for the function or macro that follows the
-      attribute.
-
-      Accepts a string (often a heredoc) or `false` where `@doc false` will
-      make the function/macro invisible to the documentation extraction tools
-      like ExDoc.
-
-      Can be invoked more than once.
-
-      ### Example
-
-          defmodule M do
-            @doc "Hello world"
-            def hello do
-              "world"
-            end
-
-            @doc """
-            Sums `a` to `b`.
-            """
-            def sum(a, b) do
-              a + b
-            end
-          end
-
-    * `@dialyzer`
-
-      Defines warnings to request or suppress when using a version of
-      `:dialyzer` that supports module attributes.
-
-      Accepts an atom, a tuple, or a list of atoms and tuples.
-
-      For the list of supported warnings, see
-      [`:dialyzer` module](http://www.erlang.org/doc/man/dialyzer.html).
-
-      Multiple uses of `@dialyzer` will accumulate instead of overriding
-      previous ones.
-
-      ### Example
-
-          defmodule M do
-            @dialyzer {:nowarn_function, myfun: 1}
-
-            def myfun(arg) do
-              M.not_a_function(arg)
-            end
-          end
-
-    * `@external_resource`
-
-      Specifies an external resource to the current module.
-
-      Many times a module embeds information from an external file. This
-      attribute allows the module to annotate which external resources
-      have been used.
-
-      Tools like Mix may use this information to ensure the module is
-      recompiled in case any of the external resources change.
-
-    * `@file`
-
-      Changes the filename used in stacktraces for the function or macro that
-      follows the attribute.
-
-      Accepts a string. Can be used more than once.
-
-      ### Example
-
-          defmodule M do
-            @doc "Hello world"
-            @file "hello.ex"
-            def hello do
-              "world"
-            end
-          end
-
-    * `@moduledoc`
-
-      Provides documentation for the current module.
-
-      Accepts a string (which is often a heredoc) or `false` where
-      `@moduledoc false` will make the module invisible to the
-      documentation extraction tools like ExDoc.
-
-      ### Example
-
-          defmodule M do
-            @moduledoc """
-            A very useful module
-            """
-          end
-
-    * `@on_definition`
-
-      A hook that will be invoked when each function or macro in the current
-      module is defined. Useful when annotating functions.
-
-      Accepts a module or a tuple `{<module>, <function atom>}`. See the
-      "Compile callbacks" section below.
-
-    * `@on_load`
-
-      A hook that will be invoked whenever the module is loaded.
-
-      Accepts a function atom of a function in the current module. The function
-      must have arity 0 (no arguments) and has to return `:ok`, otherwise the
-      loading of the module will be aborted.
-
-      ### Example
-
-          defmodule M do
-            @on_load :load_check
-
-            def load_check do
-              if some_condition() do
-                :ok
-              else
-                nil
-              end
-            end
-
-            def some_condition do
-              false
-            end
-          end
-
-    * `@vsn`
-
-      Specify the module version. Accepts any valid Elixir value.
-
-      ### Example
-
-          defmodule M do
-            @vsn "1.0"
-          end
+  ### Typespec attributes
 
   The following attributes are part of typespecs and are also reserved by
   Elixir:
@@ -239,6 +205,8 @@ defmodule Module do
     * `@macrocallback` - provides a specification for a macro behaviour callback
     * `@optional_callbacks` - specifies which behaviour callbacks and macro
       behaviour callbacks are optional
+
+  ### Custom attributes
 
   In addition to the built-in attributes outlined above, custom attributes may
   also be added. A custom attribute is any valid identifier prefixed with an
@@ -256,7 +224,7 @@ defmodule Module do
   There are three callbacks that are invoked when functions are defined,
   as well as before and immediately after the module bytecode is generated.
 
-  ### `@after_compile`
+  ### @after_compile
 
   A hook that will be invoked right after the current module is compiled.
 
@@ -275,7 +243,7 @@ defmodule Module do
         end
       end
 
-  ### `@before_compile`
+  ### @before_compile
 
   A hook that will be invoked before the module is compiled.
 
@@ -305,7 +273,7 @@ defmodule Module do
         @before_compile A
       end
 
-  ### `@on_definition`
+  ### @on_definition
 
   A hook that will be invoked when each function or macro in the current
   module is defined. Useful when annotating functions.
@@ -327,10 +295,10 @@ defmodule Module do
   If the function/macro being defined has multiple clauses, the hook will
   be called for each clause.
 
-  Unlike other hooks, `@on_definition` will only invoke functions
-  and never macros. This is because the hook is invoked inside the context
-  of the function (and nested function definitions are not allowed in
-  Elixir).
+  Unlike other hooks, `@on_definition` will only invoke functions and
+  never macros. This is to avoid `@on_definition` callbacks from
+  redefining functions that have just been defined in favor of more
+  explicit approaches.
 
   When just a module is provided, the function is assumed to be
   `__on_definition__/6`.
@@ -367,10 +335,10 @@ defmodule Module do
   below:
 
     * `@compile :debug_info` - includes `:debug_info` regardless of the
-      setting in `Code.compiler_options`
+      setting in `Code.compiler_options/1`
 
     * `@compile {:debug_info, false}` - disables `:debug_info` regardless
-      of the setting in `Code.compiler_options`
+      of the setting in `Code.compiler_options/1`
 
     * `@compile {:inline, some_fun: 2, other_fun: 3}` - inlines the given
       name/arity pairs
@@ -380,7 +348,7 @@ defmodule Module do
       it is dispatched to
 
   You can see a handful more options used by the Erlang compiler in
-  the documentation for the `:compile` module.
+  the documentation for the [`:compile` module](http://www.erlang.org/doc/man/compile.html).
   '''
 
   @doc """
@@ -428,18 +396,23 @@ defmodule Module do
 
       Foo.sum(1, 2) #=> 3
 
-  For convenience, you can pass `__ENV__` as an argument and
-  all options will be automatically extracted from the environment:
+  For convenience, you can pass any `Macro.Env` struct, such
+  as  `__ENV__/0`, as the first argument or as options. Both
+  the module and all options will be automatically extracted
+  from the environment:
 
       defmodule Foo do
         contents = quote do: (def sum(a, b), do: a + b)
-        Module.eval_quoted __MODULE__, contents, [], __ENV__
+        Module.eval_quoted __ENV__, contents
       end
 
       Foo.sum(1, 2) #=> 3
 
+  Note that if you pass a `Macro.Env` struct as first argument
+  while also passing `opts`, they will be merged with `opts`
+  having precedence.
   """
-  def eval_quoted(module, quoted, binding \\ [], opts \\ [])
+  def eval_quoted(module_or_env, quoted, binding \\ [], opts \\ [])
 
   def eval_quoted(%Macro.Env{} = env, quoted, binding, opts) do
     eval_quoted(env.module, quoted, binding, Keyword.merge(Map.to_list(env), opts))
@@ -622,7 +595,7 @@ defmodule Module do
           kind,
           merge_signatures(old_sign, signature, 1),
           if(is_nil(doc), do: old_doc, else: doc)
-       })
+        })
         :ok
     end
   end
@@ -740,6 +713,9 @@ defmodule Module do
 
   Use `defines?/3` to assert for a specific type.
 
+  This function can only be used on modules that have not yet been compiled.
+  Use `Kernel.function_exported?/3` to check compiled modules.
+
   ## Examples
 
       defmodule Example do
@@ -760,6 +736,9 @@ defmodule Module do
   given `kind`.
 
   `kind` can be any of `:def`, `:defp`, `:defmacro` or `:defmacrop`.
+
+  This function can only be used on modules that have not yet been compiled.
+  Use `Kernel.function_exported?/3` to check compiled modules.
 
   ## Examples
 
@@ -868,11 +847,7 @@ defmodule Module do
   end
 
   @doc """
-  Puts an Erlang attribute to the given module with the given
-  key and value.
-
-  The semantics of putting the attribute depends
-  if the attribute was registered or not via `register_attribute/3`.
+  Puts a module attribute with key and value in the given module.
 
   ## Examples
 
@@ -881,45 +856,25 @@ defmodule Module do
       end
 
   """
+  @spec put_attribute(module, key :: atom, value :: term) :: :ok
   def put_attribute(module, key, value) do
-    put_attribute(module, key, value, nil)
-  end
-
-  @doc false
-  def put_attribute(module, key, value, stack) when is_atom(key) do
-    assert_not_compiled!(:put_attribute, module)
-    table = data_table_for(module)
-    value = preprocess_attribute(key, value)
-    acc   = :ets.lookup_element(table, {:elixir, :acc_attributes}, 2)
-    warn_if_redefining_doc_attribute(stack, table, key)
-
-    new =
-      if :lists.member(key, acc) do
-        case :ets.lookup(table, key) do
-          [{^key, old}] -> [value | old]
-          [] -> [value]
-        end
-      else
-        value
-      end
-
-    :ets.insert(table, {key, new})
+    put_attribute(module, key, value, nil, nil)
   end
 
   @doc """
   Gets the given attribute from a module.
 
   If the attribute was marked with `accumulate` with
-  `Module.register_attribute/3`, a list is always returned. `nil` is returned
-  if the attribute has not been marked with `accumulate` and has not been set
-  to any value.
+  `Module.register_attribute/3`, a list is always returned.
+  `nil` is returned if the attribute has not been marked with
+  `accumulate` and has not been set to any value.
 
   The `@` macro compiles to a call to this function. For example,
   the following code:
 
       @foo
 
-  Expands close to:
+  Expands to something akin to:
 
       Module.get_attribute(__MODULE__, :foo)
 
@@ -935,13 +890,15 @@ defmodule Module do
       end
 
   """
-  @spec get_attribute(atom, atom) :: term
+  @spec get_attribute(module, atom) :: term
   def get_attribute(module, key) do
     get_attribute(module, key, nil)
   end
 
   @doc """
-  Deletes all attributes that match the given key.
+  Deletes the module attribute that matches the given key.
+
+  It returns the deleted attribute value (or `nil` if nothing was set).
 
   ## Examples
 
@@ -951,18 +908,26 @@ defmodule Module do
       end
 
   """
-  @spec delete_attribute(atom, atom) :: :ok
+  @spec delete_attribute(module, key :: atom) :: (value :: term)
   def delete_attribute(module, key) when is_atom(key) do
     assert_not_compiled!(:delete_attribute, module)
     table = data_table_for(module)
-    :ets.delete(table, key)
-    :ok
+    case :ets.take(table, key) do
+      [{_, value, _accumulated? = true, _}] ->
+        :ets.insert(table, {key, [], true, nil})
+        value
+      [{_, value, _, _}] ->
+        value
+      [] ->
+        nil
+    end
   end
 
   @doc """
-  Registers an attribute. By registering an attribute, a developer
-  is able to customize how Elixir will store and accumulate the
-  attribute values.
+  Registers an attribute.
+
+  By registering an attribute, a developer is able to customize
+  how Elixir will store and accumulate the attribute values.
 
   ## Options
 
@@ -1000,9 +965,11 @@ defmodule Module do
     end
 
     if Keyword.get(opts, :accumulate) do
-      old = :ets.lookup_element(table, {:elixir, :acc_attributes}, 2)
-      :ets.insert(table, {{:elixir, :acc_attributes}, [new | old]})
+      :ets.insert_new(table, {new, [], _accumulated? = true, _unread_line = nil}) ||
+        :ets.update_element(table, new, {3, true})
     end
+
+    :ok
   end
 
   @doc """
@@ -1023,8 +990,8 @@ defmodule Module do
   end
 
   @doc false
-  # Used internally to compile documentation. This function
-  # is private and must be used only internally.
+  # Used internally to compile documentation.
+  # This function is private and must be used only internally.
   def compile_doc(env, kind, name, args, _guards, _body) do
     module = env.module
     table  = data_table_for(module)
@@ -1057,43 +1024,64 @@ defmodule Module do
   end
 
   @doc false
-  # Used internally to compile types. This function
-  # is private and must be used only internally.
+  # Used internally to compile types.
+  # This function is private and must be used only internally.
   def store_typespec(module, key, value) when is_atom(key) do
     assert_not_compiled!(:put_attribute, module)
     table = data_table_for(module)
 
     new =
       case :ets.lookup(table, key) do
-        [{^key, old}] -> [value | old]
+        [{^key, old, _, _}] -> [value | old]
         [] -> [value]
       end
 
-    :ets.insert(table, {key, new})
+    :ets.insert(table, {key, new, true, nil})
   end
 
   @doc false
-  def get_attribute(module, key, stack) when is_atom(key) and (is_list(stack) or is_nil(stack)) do
+  # Used internally by Kernel's @.
+  # This function is private and must be used only internally.
+  def get_attribute(module, key, stack) when is_atom(key) do
     assert_not_compiled!(:get_attribute, module)
     table = data_table_for(module)
 
     case :ets.lookup(table, key) do
-      [{^key, val}] ->
+      [{^key, val, _, _}] ->
+        :ets.update_element(table, key, {4, nil})
         val
+      [] when is_list(stack) ->
+        # TODO: Consider raising instead of warning on v2.0 as it usually cascades
+        IO.warn "undefined module attribute @#{key}, " <>
+                "please remove access to @#{key} or explicitly set it before access", stack
+        nil
       [] ->
-        acc = :ets.lookup_element(table, {:elixir, :acc_attributes}, 2)
-
-        cond do
-          :lists.member(key, acc) ->
-            []
-          is_list(stack) ->
-            IO.warn "undefined module attribute @#{key}, " <>
-                    "please remove access to @#{key} or explicitly set it before access", stack
-            nil
-          true ->
-            nil
-        end
+        nil
     end
+  end
+
+  @doc false
+  # Used internally by Kernel's @.
+  # This function is private and must be used only internally.
+  def put_attribute(module, key, value, stack, unread_line) when is_atom(key) do
+    assert_not_compiled!(:put_attribute, module)
+    table = data_table_for(module)
+    value = preprocess_attribute(key, value)
+
+    case :ets.lookup(table, key) do
+      [{^key, {line, <<_::binary>>}, accumulated?, _unread_line}]
+          when key in [:doc, :typedoc, :moduledoc] and is_list(stack) ->
+        IO.warn "redefining @#{key} attribute previously set at line #{line}", stack
+        :ets.insert(table, {key, value, accumulated?, unread_line})
+
+      [{^key, current, _accumulated? = true, _read?}] ->
+        :ets.insert(table, {key, [value | current], true, unread_line})
+
+      _ ->
+        :ets.insert(table, {key, value, false, unread_line})
+    end
+
+    :ok
   end
 
   ## Helpers
@@ -1103,15 +1091,9 @@ defmodule Module do
       {line, doc} when is_integer(line) and (is_binary(doc) or is_boolean(doc) or is_nil(doc)) ->
         value
       {line, doc} when is_integer(line) ->
-        # Here, either the user used "@moduledoc :not_a_binary" or
-        # "Module.put_attribute(..., {1, :not_a_binary})". By showing just the
-        # "doc" value in the error, it should be clear in both cases.
         raise ArgumentError,
           "expected the #{key} attribute to contain a binary, a boolean, or nil, got: #{inspect(doc)}"
       _other ->
-        # Here, we're sure it's from Module.put_attribute/3 because it's not a
-        # tuple with an int as the first element (which is what we create with
-        # @).
         raise ArgumentError,
           "expected the #{key} attribute to be {line, doc} (where \"doc\" is " <>
           "a binary, a boolean, or nil), got: #{inspect(value)}"
@@ -1150,7 +1132,7 @@ defmodule Module do
 
   defp get_doc_info(table, env) do
     case :ets.take(table, :doc) do
-      [doc: {_, _} = pair] -> pair
+      [{:doc, {_, _} = pair, _, _}] -> pair
       [] -> {env.line, nil}
     end
   end
@@ -1168,16 +1150,4 @@ defmodule Module do
       raise ArgumentError,
         "could not call #{fun} on module #{inspect module} because it was already compiled"
   end
-
-  defp warn_if_redefining_doc_attribute(stack, table, key)
-      when is_list(stack) and key in [:doc, :typedoc, :moduledoc] do
-    case :ets.lookup(table, key) do
-      [{_, {line, val}}] when val != false ->
-        IO.warn "redefining @#{key} attribute previously set at line #{line}", stack
-      _ ->
-        false
-    end
-  end
-
-  defp warn_if_redefining_doc_attribute(nil, _table, _key), do: false
 end

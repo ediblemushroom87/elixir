@@ -11,7 +11,7 @@ defmodule ExUnit.Case do
 
   When used, it accepts the following options:
 
-    * :async - configure this specific test case to able to run in parallel
+    * `:async` - configure this specific test case to able to run in parallel
       with other test cases. May be used for performance when this test case
       does not change any global state. Defaults to `false`.
 
@@ -84,7 +84,7 @@ defmodule ExUnit.Case do
         end
 
         @tag cd: "fixtures"
-        test "reads utf-8 fixtures" do
+        test "reads UTF-8 fixtures" do
           File.read("hello")
         end
       end
@@ -132,7 +132,7 @@ defmodule ExUnit.Case do
     * `:capture_log` - see the "Log Capture" section below
     * `:skip` - skips the test with the given reason
     * `:timeout` - customizes the test timeout in milliseconds (defaults to 60000)
-    * `:report` - include the given tags and context keys on error reports,
+    * `:report` - includes the given tags and context keys on error reports,
       see the "Reporting tags" section
 
   ### Reporting tags
@@ -264,11 +264,10 @@ defmodule ExUnit.Case do
   @doc """
   Defines a not implemented test with a string.
 
-  Provides a convenient macro that allows a test to be
-  defined with a string, but not yet implemented. The
-  resulting test will always fail and print "Not yet
-  implemented" error message. The resulting test case is
-  also tagged with :not_implemented.
+  Provides a convenient macro that allows a test to be defined
+  with a string, but not yet implemented. The resulting test will
+  always fail and print "Not implemented" error message. The
+  resulting test case is also tagged with `:not_implemented`.
 
   ## Examples
 
@@ -278,7 +277,7 @@ defmodule ExUnit.Case do
   defmacro test(message) do
     quote bind_quoted: binding() do
       name = ExUnit.Case.register_test(__ENV__, :test, message, [:not_implemented])
-      def unquote(name)(_), do: flunk("Not yet implemented")
+      def unquote(name)(_), do: flunk("Not implemented")
     end
   end
 
@@ -402,7 +401,7 @@ defmodule ExUnit.Case do
     registered_attributes = Module.get_attribute(mod, :ex_unit_registered)
     registered = Map.new(registered_attributes, &{&1, Module.get_attribute(mod, &1)})
 
-    tag = Module.get_attribute(mod, :tag)
+    tag = Module.delete_attribute(mod, :tag)
     async = Module.get_attribute(mod, :ex_unit_async)
 
     {name, describe, describetag} =
@@ -426,7 +425,7 @@ defmodule ExUnit.Case do
     test = %ExUnit.Test{name: name, case: mod, tags: tags}
     Module.put_attribute(mod, :ex_unit_tests, test)
 
-    Enum.each [:tag | registered_attributes], fn(attribute) ->
+    Enum.each registered_attributes, fn(attribute) ->
       Module.delete_attribute(mod, attribute)
     end
 
@@ -438,7 +437,7 @@ defmodule ExUnit.Case do
 
   The attribute values will be available as a key/value pair in
   `context.registered`. The key/value pairs will be cleared
-  after each `ExUnit.Case.test` similar to `@tag`.
+  after each `ExUnit.Case.test/3` similar to `@tag`.
 
   `Module.register_attribute/3` is used to register the attribute,
   this function takes the same options.
@@ -473,7 +472,7 @@ defmodule ExUnit.Case do
     end
 
     unless is_atom(tags[:type]),
-      do: raise "value for tag `:type` must be an atom"
+      do: raise "value for tag \":type\" must be an atom"
 
     tags
   end

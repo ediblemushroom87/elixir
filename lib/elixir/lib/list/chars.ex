@@ -5,14 +5,15 @@ defprotocol List.Chars do
   The only function required to be implemented is
   `to_charlist` which does the conversion.
 
-  The `to_charlist` function automatically imported
-  by Kernel invokes this protocol.
+  The `to_charlist/1` function automatically imported
+  by `Kernel` invokes this protocol.
   """
 
   def to_charlist(term)
 
-  # TODO: Deprecate by v1.5
   @doc false
+  # TODO: Remove by 2.0
+  # (hard-deprecated in elixir_dispatch)
   Kernel.def to_char_list(term) do
     __MODULE__.to_charlist(term)
   end

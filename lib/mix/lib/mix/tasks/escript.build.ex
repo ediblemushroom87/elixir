@@ -44,9 +44,9 @@ defmodule Mix.Tasks.Escript.Build do
       Defaults to app name. Set it to `nil` if no application should
       be started.
 
-    * `:embed_elixir` - if `true` embed elixir and its children apps
+    * `:embed_elixir` - if `true` embed Elixir and its children apps
       (`ex_unit`, `mix`, etc.) mentioned in the `:applications` list inside the
-      `application` function in `mix.exs`.
+      `application/0` function in `mix.exs`.
 
       Defaults to `true` for Elixir projects, `false` for Erlang projects.
 
@@ -74,17 +74,19 @@ defmodule Mix.Tasks.Escript.Build do
   ## Example
 
       defmodule MyApp.Mixfile do
+        use Mix.Project
+
         def project do
-          [app: :myapp,
+          [app: :my_app,
            version: "0.0.1",
-           escript: escript]
+           escript: escript()]
         end
 
         def escript do
           [main_module: MyApp.CLI]
         end
       end
-      
+
       defmodule MyApp.CLI do
         def main(_args) do
           IO.puts("Hello from MyApp!")
@@ -112,6 +114,10 @@ defmodule Mix.Tasks.Escript.Build do
 
   defp escriptize(project, language, force) do
     escript_opts = project[:escript] || []
+
+    if Mix.Project.umbrella?() do
+      Mix.raise "Building escripts for umbrella projects is unsupported"
+    end
 
     script_name  = Mix.Local.name_for(:escript, project)
     filename     = escript_opts[:path] || script_name
@@ -193,14 +199,29 @@ defmodule Mix.Tasks.Escript.Build do
   end
 
   defp extra_apps() do
-    mod = Mix.Project.get!
+    Mix.Project.config()[:app]
+    |> extra_apps_in_app_tree()
+    |> Enum.uniq()
+  end
 
-    extra_apps =
-      if function_exported?(mod, :application, 0) do
-        mod.application[:applications]
-      end
+  defp extra_apps_in_app_tree(app) when app in [:kernel, :stdlib, :elixir] do
+    []
+  end
 
-    Enum.filter(extra_apps || [], &(&1 in [:eex, :ex_unit, :mix, :iex, :logger]))
+  defp extra_apps_in_app_tree(app) when app in [:eex, :ex_unit, :iex, :logger, :mix] do
+    [app]
+  end
+
+  defp extra_apps_in_app_tree(app) do
+    _ = Application.load(app)
+    case Application.spec(app) do
+      nil ->
+        []
+      spec ->
+        applications = Keyword.get(spec, :applications, []) ++
+                       Keyword.get(spec, :included_applications, [])
+        Enum.flat_map(applications, &extra_apps_in_app_tree/1)
+    end
   end
 
   defp app_files(app) do

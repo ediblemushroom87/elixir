@@ -3,6 +3,12 @@ Mix.shell(Mix.Shell.Process)
 Application.put_env(:mix, :colors, [enabled: false])
 ExUnit.start [trace: "--trace" in System.argv]
 
+
+unless {1, 7, 4} <= Mix.SCM.Git.git_version do
+  IO.puts :stderr, "Skipping tests with git sparse checkouts..."
+  ExUnit.configure(exclude: :git_sparse)
+end
+
 defmodule MixTest.Case do
   use ExUnit.CaseTemplate
 
@@ -225,6 +231,30 @@ unless File.dir?(target) do
   File.write! Path.join(target, "lib/git_repo.ex"), """
   ## Auto-generated fixture
   defmodule GitRepo do
+    def hello do
+      "World"
+    end
+  end
+  """
+
+  ## Sparse
+  subdir = Path.join(target, "sparse_dir")
+  File.mkdir_p!(Path.join(subdir, "lib"))
+
+  File.write! Path.join(subdir, "mix.exs"), """
+  ## Auto-generated fixture
+  defmodule GitSparseRepo.Mixfile do
+    use Mix.Project
+
+    def project do
+      [app: :git_sparse_repo, version: "0.1.0"]
+    end
+  end
+  """
+
+  File.write! Path.join(subdir, "lib/git_sparse_repo.ex"), """
+  ## Auto-generated fixture
+  defmodule GitSparseRepo do
     def hello do
       "World"
     end

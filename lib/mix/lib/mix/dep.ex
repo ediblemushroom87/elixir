@@ -78,7 +78,7 @@ defmodule Mix.Dep do
       System.get_env("MIX_NO_DEPS") in ~w(1 true) ->
         []
       project = Mix.Project.get ->
-        key = {:cached_deps, project}
+        key = {:cached_deps, Mix.env, project}
         Mix.ProjectStack.read_cache(key) ||
           Mix.ProjectStack.write_cache(key, loaded(env: Mix.env))
       true ->
@@ -201,8 +201,8 @@ defmodule Mix.Dep do
     do: "the app file contains an invalid version: #{inspect vsn}"
 
   def format_status(%Mix.Dep{status: {:nosemver, vsn}, requirement: req}),
-    do: "the app file specified a non Semantic Version: #{inspect vsn}. Mix can only match the " <>
-        "requirement #{inspect req} against Semantic Versions. Please fix the application version " <>
+    do: "the app file specified a non-Semantic Versioning format: #{inspect vsn}. Mix can only match the " <>
+        "requirement #{inspect req} against semantic versions. Please fix the application version " <>
         "or use a regex as a requirement to match against any version"
 
   def format_status(%Mix.Dep{status: {:nomatchvsn, vsn}, requirement: req}),
@@ -270,7 +270,7 @@ defmodule Mix.Dep do
     do: "the dependency was built with another SCM, run \"#{mix_env_var()}mix deps.compile\""
 
   defp dep_status(%Mix.Dep{app: app, requirement: req, manager: manager, opts: opts, from: from}) do
-    opts = Keyword.drop(opts, [:dest, :build, :lock, :manager])
+    opts = Keyword.drop(opts, [:dest, :build, :lock, :manager, :checkout])
     opts = opts ++ (if manager, do: [manager: manager], else: [])
     info = if req, do: {app, req, opts}, else: {app, opts}
     "\n  > In #{Path.relative_to_cwd(from)}:\n    #{inspect info}\n"

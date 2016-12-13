@@ -14,30 +14,30 @@ defmodule Mix.Tasks.Profile.Fprof do
   with all processes which are spawned by it. Other processes (e.g. those
   residing in the OTP application supervision tree) are not profiled.
 
-  To profile the code, you can use the syntax similar to `mix run` task:
+  To profile the code, you can use syntax similar to the `mix run` task:
 
       mix profile.fprof -e Hello.world
       mix profile.fprof my_script.exs arg1 arg2 arg3
 
   ## Command line options
 
-    * `--callers`       - print detailed information about immediate callers and called functions
-    * `--details`       - include profile data for each profiled process
-    * `--sort key`      - sort the output by given key: acc (default) or own
+    * `--callers` - prints detailed information about immediate callers and called functions
+    * `--details` - includes profile data for each profiled process
+    * `--sort key` - sorts the output by given key: `acc` (default) or `own`
     * `--config`, `-c`  - loads the given configuration file
-    * `--eval`, `-e`    - evaluate the given code
-    * `--require`, `-r` - require pattern before running the command
+    * `--eval`, `-e` - evaluates the given code
+    * `--require`, `-r` - requires pattern before running the command
     * `--parallel`, `-p` - makes all requires parallel
-    * `--no-compile`    - do not compile even if files require compilation
-    * `--no-deps-check` - do not check dependencies
-    * `--no-archives-check` - do not check archives
-    * `--no-start`      - do not start applications after compilation
-    * `--no-elixir-version-check` - do not check the Elixir version from mix.exs
-    * `--no-warmup`     - do not execute code once before profiling
+    * `--no-compile`    - does not compile even if files require compilation
+    * `--no-deps-check` - does not check dependencies
+    * `--no-archives-check` - does not check archives
+    * `--no-start` - does not start applications after compilation
+    * `--no-elixir-version-check` - does not check the Elixir version from mix.exs
+    * `--no-warmup` - does not execute code once before profiling
 
   ## Profile output
 
-  The example output looks as following:
+  Example output:
       #                                        CNT    ACC (ms)    OWN (ms)
       Total                                 200279    1972.188    1964.579
       :fprof.apply_start_stop/4                  0    1972.188       0.012
@@ -50,37 +50,37 @@ defmodule Mix.Tasks.Profile.Fprof do
   The default output contains data gathered from all profiled processes.
   All times are wall clock milliseconds. The columns have the following meaning:
 
-    * CNT - total number of invocation of the given function
+    * CNT - total number of invocations of the given function
     * ACC - total time spent in the function
     * OWN - time spent in the function, excluding the time of called functions
 
   The first row (Total) is the sum of all functions executed in all profiled
-  processes. For the given output, we had in total 200279 function calls and spent
-  about 2 seconds running the entire code.
+  processes. For the given output, we had a total of 200279 function calls and spent
+  about 2 seconds running the code.
 
-  You can obtain further information if you provide `--callers` and
+  More detailed information is returned if you provide the `--callers` and
   `--details` options.
 
   When `--callers` option is specified, you'll see expanded function entries:
 
-      Mod.caller_1/0                            3     200.000       0.017
-      Mod.caller_2/0                            2     100.000       0.017
+      Mod.caller1/0                             3     200.000       0.017
+      Mod.caller2/0                             2     100.000       0.017
         Mod.some_function/0                     5     300.000       0.017  <--
-          Mod.called_1/0                        4     250.000       0.010
-          Mod.called_2/0                        1      50.000       0.030
+          Mod.called1/0                         4     250.000       0.010
+          Mod.called2/0                         1      50.000       0.030
 
   Here, the arrow (`<--`) indicates the __marked__ function - the function
   described by this paragraph. You also see its immediate callers (above) and
   called functions (below).
 
   All the values of caller functions describe the marked function. For example,
-  the first row means that `Mod.caller_1/0` invoked `Mod.some_function/0` 3 times.
-  200ms of the total time spent in `Mod.some_function/0` happened due to this
-  particular caller.
+  the first row means that `Mod.caller1/0` invoked `Mod.some_function/0` 3 times.
+  200ms of the total time spent in `Mod.some_function/0` was spent processing
+  calls from this particular caller.
 
   In contrast, the values for the called functions describe those functions, but
   in the context of the marked function. For example, the last row means that
-  `Mod.called_2/0` was called once by `Mod.some_function/0`, and in that case
+  `Mod.called2/0` was called once by `Mod.some_function/0`, and in that case
   the total time spent in the function was 50ms.
 
   For a detailed explanation it's worth reading the analysis in
@@ -89,20 +89,21 @@ defmodule Mix.Tasks.Profile.Fprof do
   ## Caveats
 
   You should be aware that the code being profiled is running in an anonymous
-  function which is invoked by `:fprof` module. Thus, you'll see some additional
-  entries in your profile output, such as `:fprof` calls, an anonymous
+  function which is invoked by [`:fprof` module](http://wwww.erlang.org/doc/man/fprof.html).
+  Thus, you'll see some additional entries in your profile output,
+  such as `:fprof` calls, an anonymous
   function with high ACC time, or an `:undefined` function which represents
   the outer caller (non-profiled code which started the profiler).
 
   Also, keep in mind that profiling might significantly increase the running time
-  of the profiled processes. This might skew your results for example if those
+  of the profiled processes. This might skew your results if, for example, those
   processes perform some I/O operations, since running time of those operations
   will remain unchanged, while CPU bound operations of the profiled processes
   might take significantly longer. Thus, when profiling some intensive program,
   try to reduce such dependencies, or be aware of the resulting bias.
 
   Finally, it's advised to profile your program with the `prod` environment, since
-  this should give you a more correct insight into your real bottlenecks.
+  this should provide more realistic insights into bottlenecks.
   """
 
   @switches [parallel: :boolean, require: :keep, eval: :keep, config: :keep,

@@ -1,13 +1,13 @@
 ### Precheck
 
-* Do not use the issues tracker for help or support (try Stack Overflow, IRC, mailing list, etc)
+* Do not use the issues tracker for help or support (try Elixir Forum, Stack Overflow, IRC, etc.)
 * For proposing a new feature, please start a discussion on the Elixir Core mailing list
 * For bugs, do a quick search and make sure the bug has not yet been reported
 * Finally, be nice and have fun!
 
 ### Environment
 
-* Elixir version (elixir -v):
+* Elixir & Erlang versions (elixir -v):
 * Operating system:
 
 ### Current behavior

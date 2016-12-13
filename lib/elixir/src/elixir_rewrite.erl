@@ -29,7 +29,7 @@
 %% number and order of arguments and show up on captures.
 
 inline(?atom, to_charlist, 1) -> {erlang, atom_to_list};
-%% TODO: Deprecate to_char_list function by v1.5
+%% TODO: Remove to_char_list by 2.0
 inline(?atom, to_char_list, 1) -> {erlang, atom_to_list};
 inline(?io, iodata_length, 1) -> {erlang, iolist_size};
 inline(?io, iodata_to_binary, 1) -> {erlang, iolist_to_binary};
@@ -37,7 +37,7 @@ inline(?integer, to_string, 1) -> {erlang, integer_to_binary};
 inline(?integer, to_string, 2) -> {erlang, integer_to_binary};
 inline(?integer, to_charlist, 1) -> {erlang, integer_to_list};
 inline(?integer, to_charlist, 2) -> {erlang, integer_to_list};
-%% TODO: Deprecate to_char_list function by v1.5
+%% TODO: Remove to_char_list by 2.0
 inline(?integer, to_char_list, 1) -> {erlang, integer_to_list};
 inline(?integer, to_char_list, 2) -> {erlang, integer_to_list};
 inline(?list, to_atom, 1) -> {erlang, list_to_atom};
@@ -116,6 +116,8 @@ inline(?map, size, 1) -> {maps, size};
 inline(?map, values, 1) -> {maps, values};
 inline(?map, to_list, 1) -> {maps, to_list};
 
+inline(?node, list, 0) -> {erlang, nodes};
+inline(?node, list, 1) -> {erlang, nodes};
 inline(?node, spawn, 2) -> {erlang, spawn};
 inline(?node, spawn, 3) -> {erlang, spawn_opt};
 inline(?node, spawn, 4) -> {erlang, spawn};
@@ -139,12 +141,10 @@ inline(?process, spawn, 4) -> {erlang, spawn_opt};
 inline(?process, unlink, 1) -> {erlang, unlink};
 
 inline(?port, open, 2) -> {erlang, open_port};
-inline(?port, call, 3) -> {erlang, port_call};
 inline(?port, close, 1) -> {erlang, port_close};
 inline(?port, command, 2) -> {erlang, port_command};
 inline(?port, command, 3) -> {erlang, port_command};
 inline(?port, connect, 2) -> {erlang, port_connect};
-inline(?port, control, 3) -> {erlang, port_control};
 inline(?port, list, 0) -> {erlang, ports};
 
 inline(?string, to_float, 1) -> {erlang, binary_to_float};
@@ -186,7 +186,7 @@ rewrite(?access, _DotMeta, 'get', Meta, [Arg, _], Env)
     ['Elixir.Macro':to_string(Arg)]);
 rewrite(?list_chars, _DotMeta, 'to_charlist', _Meta, [List], _Env) when is_list(List) ->
   List;
-%% TODO: Deprecate to_char_list function by v1.5
+%% TODO: Remove to_char_list function by 2.0
 rewrite(?list_chars, _DotMeta, 'to_char_list', _Meta, [List], _Env) when is_list(List) ->
   List;
 rewrite(?string_chars, _DotMeta, 'to_string', _Meta, [String], _Env) when is_binary(String) ->
@@ -194,27 +194,29 @@ rewrite(?string_chars, _DotMeta, 'to_string', _Meta, [String], _Env) when is_bin
 rewrite(?string_chars, _, 'to_string', _, [{{'.', _, [?kernel, inspect]}, _, _} = Call], _Env) ->
   Call;
 rewrite(?string_chars, DotMeta, 'to_string', Meta, [Call], _Env) ->
+  Generated = ?generated(Meta),
   Var   = {'rewrite', Meta, 'Elixir'},
-  Guard = remote(erlang, ?generated, is_binary, ?generated, [Var]),
+  Guard = remote(erlang, Generated, is_binary, Generated, [Var]),
   Slow  = remote(?string_chars, DotMeta, 'to_string', Meta, [Var]),
   Fast  = Var,
 
-  {'case', ?generated, [Call, [{do,
-    [{'->', ?generated, [[{'when', Meta, [Var, Guard]}], Fast]},
-     {'->', ?generated, [[Var], Slow]}]
+  {'case', Generated, [Call, [{do,
+    [{'->', Generated, [[{'when', Meta, [Var, Guard]}], Fast]},
+     {'->', Generated, [[Var], Slow]}]
   }]]};
 
 rewrite(?enum, DotMeta, 'reverse', Meta, [List], _Env) when is_list(List) ->
   remote(lists, DotMeta, 'reverse', Meta, [List]);
 rewrite(?enum, DotMeta, 'reverse', Meta, [List], _Env) ->
+  Generated = ?generated(Meta),
   Var   = {'rewrite', Meta, 'Elixir'},
-  Guard = remote(erlang, ?generated, is_list, ?generated, [Var]),
+  Guard = remote(erlang, Generated, is_list, Generated, [Var]),
   Slow  = remote(?enum, DotMeta, 'reverse', Meta, [Var, []]),
   Fast  = remote(lists, DotMeta, 'reverse', Meta, [Var]),
 
-  {'case', ?generated, [List, [{do,
-    [{'->', ?generated, [[{'when', Meta, [Var, Guard]}], Fast]},
-     {'->', ?generated, [[Var], Slow]}]
+  {'case', Generated, [List, [{do,
+    [{'->', Generated, [[{'when', Meta, [Var, Guard]}], Fast]},
+     {'->', Generated, [[Var], Slow]}]
   }]]};
 
 rewrite(Receiver, DotMeta, Right, Meta, Args, _Env) ->
@@ -245,6 +247,8 @@ rewrite(?process, monitor, [Arg]) ->
   {erlang, monitor, [process, Arg]};
 rewrite(?process, send_after, [Dest, Msg, Time]) ->
   {erlang, send_after, [Time, Dest, Msg]};
+rewrite(?process, send_after, [Dest, Msg, Time, Opts]) ->
+  {erlang, send_after, [Time, Dest, Msg, Opts]};
 rewrite(?string, to_atom, [Arg]) ->
   {erlang, binary_to_atom, [Arg, utf8]};
 rewrite(?string, to_existing_atom, [Arg]) ->

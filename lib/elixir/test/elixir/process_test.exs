@@ -19,7 +19,7 @@ defmodule ProcessTest do
   end
 
   test "group_leader/2 and group_leader/0" do
-    another = spawn_link(fn -> :timer.sleep(1000) end)
+    another = spawn_link(fn -> Process.sleep(1000) end)
     assert Process.group_leader(self(), another)
     assert Process.group_leader == another
   end
@@ -34,7 +34,7 @@ defmodule ProcessTest do
   end
 
   test "info/2" do
-    pid = spawn fn -> :timer.sleep(1000) end
+    pid = spawn fn -> Process.sleep(1000) end
     assert Process.info(pid, :priority) == {:priority, :normal}
     assert Process.info(pid, [:priority]) == [priority: :normal]
 
@@ -65,6 +65,12 @@ defmodule ProcessTest do
 
   test "send_after/3 sends messages once expired" do
     Process.send_after(self(), :hello, 10)
+    assert_receive :hello
+  end
+
+  test "send_after/4 with absolute time sends message once expired" do
+    time = System.monotonic_time(:millisecond) + 10
+    Process.send_after(self(), :hello, time, abs: true)
     assert_receive :hello
   end
 

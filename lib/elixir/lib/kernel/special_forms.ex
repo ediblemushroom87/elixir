@@ -7,13 +7,11 @@ defmodule Kernel.SpecialForms do
   `alias/2`, `case/2`, etc). The macros `{}` and `<<>>` are also special
   forms used to define tuple and binary data structures respectively.
 
-  This module also documents Elixir's pseudo variables (`__ENV__`,
-  `__MODULE__`, `__DIR__` and `__CALLER__`). Pseudo variables return
-  information about Elixir's compilation environment and can only
-  be read, never assigned to.
+  This module also documents macros that return information about Elixir's
+  compilation environment, such as (`__ENV__/0`, `__MODULE__/0`, `__DIR__/0` and `__CALLER__/0`).
 
-  Finally, it also documents two special forms, `__block__` and
-  `__aliases__`, which are not intended to be called directly by the
+  Finally, it also documents two special forms, `__block__/1` and
+  `__aliases__/1`, which are not intended to be called directly by the
   developer but they appear in quoted contents since they are essential
   in Elixir's constructs.
   """
@@ -37,7 +35,7 @@ defmodule Kernel.SpecialForms do
   ## AST representation
 
   Only two-item tuples are considered literals in Elixir and return themselves
-  when quoted. Therefore all other tuples are represented in the AST as calls to
+  when quoted. Therefore, all other tuples are represented in the AST as calls to
   the `:{}` special form.
 
       iex> quote do
@@ -133,10 +131,10 @@ defmodule Kernel.SpecialForms do
 
   - `integer`
   - `float`
-  - `bits` (alias for bitstring)
+  - `bits` (alias for `bitstring`)
   - `bitstring`
   - `binary`
-  - `bytes` (alias for binary)
+  - `bytes` (alias for `binary`)
   - `utf8`
   - `utf16`
   - `utf32`
@@ -158,13 +156,13 @@ defmodule Kernel.SpecialForms do
       iex> <<102, rest>>
       ** (ArgumentError) argument error
 
-  We can solve this by explicitly tagging it as a binary:
+  We can solve this by explicitly tagging it as `binary`:
 
       iex> rest = "oo"
       iex> <<102, rest::binary>>
       "foo"
 
-  The utf8, utf16, and utf32 types are for Unicode codepoints. They
+  The `utf8`, `utf16`, and `utf32` types are for Unicode codepoints. They
   can also be applied to literal strings and charlists:
 
       iex> <<"foo"::utf16>>
@@ -224,7 +222,7 @@ defmodule Kernel.SpecialForms do
       iex> x = 1
       iex> <<x::8>> == <<x::size(8)>>
       true
-      iex> <<x::8 * 4>> == <<x::size(8)-unit(4)>>
+      iex> <<x::8*4>> == <<x::size(8)-unit(4)>>
       true
 
   This syntax reflects the fact the effective size is given by
@@ -239,8 +237,8 @@ defmodule Kernel.SpecialForms do
   -------------------- | ----------------
   `signed`             | `integer`
   `unsigned` (default) | `integer`
-  `little`             | `integer`, `utf16`, `utf32`
-  `big` (default)      | `integer`, `utf16`, `utf32`
+  `little`             | `integer`, `float`, `utf16`, `utf32`
+  `big` (default)      | `integer`, `float`, `utf16`, `utf32`
   `native`             | `integer`, `utf16`, `utf32`
 
   ### Sign
@@ -295,7 +293,7 @@ defmodule Kernel.SpecialForms do
 
       defmodule ImageTyper
         @png_signature <<137::size(8), 80::size(8), 78::size(8), 71::size(8),
-                      13::size(8), 10::size(8), 26::size(8), 10::size(8)>>
+                         13::size(8), 10::size(8), 26::size(8), 10::size(8)>>
         @jpg_signature <<255::size(8), 216::size(8)>>
 
         def type(<<@png_signature, rest::binary>>), do: :png
@@ -357,7 +355,7 @@ defmodule Kernel.SpecialForms do
       iex> Kernel.'+'(1, 2)
       3
 
-  Note that `Kernel."HELLO"` will be treated as a remote call and not an alias.
+  Note that `Kernel."FUNCTION_NAME"` will be treated as a remote call and not an alias.
   This choice was done so every time single- or double-quotes are used, we have
   a remote call regardless of the quote contents. This decision is also reflected
   in the quoted expressions discussed below.
@@ -399,7 +397,7 @@ defmodule Kernel.SpecialForms do
       ...> end
       {:__aliases__, [alias: false], [:Hello, :World]}
 
-  We go into more details about aliases in the `__aliases__` special form
+  We go into more details about aliases in the `__aliases__/1` special form
   documentation.
 
   ## Unquoting
@@ -412,7 +410,7 @@ defmodule Kernel.SpecialForms do
       ...> end
       {{:., [], [{:__aliases__, [alias: false], [:String]}, :downcase]}, [], ["FOO"]}
 
-  Similar to `Kernel."HELLO"`, `unquote(x)` will always generate a remote call,
+  Similar to `Kernel."FUNCTION_NAME"`, `unquote(x)` will always generate a remote call,
   independent of the value of `x`. To generate an alias via the quoted expression,
   one needs to rely on `Module.concat/2`:
 
@@ -455,6 +453,16 @@ defmodule Kernel.SpecialForms do
   Is the same as:
 
       alias Foo.Bar.Baz, as: Baz
+
+  We can also alias multiple modules in one line:
+
+      alias Foo.{Bar, Baz, Biz}
+
+  Is the same as:
+
+      alias Foo.Bar
+      alias Foo.Baz
+      alias Foo.Biz
 
   ## Lexical scope
 
@@ -614,7 +622,7 @@ defmodule Kernel.SpecialForms do
   @doc """
   Returns the current module name as an atom or `nil` otherwise.
 
-  Although the module can be accessed in the `__ENV__`, this macro
+  Although the module can be accessed in the `__ENV__/0`, this macro
   is a convenient shortcut.
   """
   defmacro __MODULE__, do: error!([])
@@ -1029,8 +1037,8 @@ defmodule Kernel.SpecialForms do
 
       Hygiene.return_length #=> 3
 
-  Notice how `return_length` returns 3 even though the `length/1`
-  function is not imported. In fact, even if `return_length`
+  Notice how `Hygiene.return_length/0` returns `3` even though the `Kernel.length/1`
+  function is not imported. In fact, even if `return_length/0`
   imported a function with the same name and arity from another
   module, it wouldn't affect the function result:
 
@@ -1039,10 +1047,10 @@ defmodule Kernel.SpecialForms do
         get_length
       end
 
-  Calling this new `return_length` will still return 3 as result.
+  Calling this new `return_length/0` will still return `3` as result.
 
   Elixir is smart enough to delay the resolution to the latest
-  moment possible. So, if you call `length([1, 2, 3])` inside quote,
+  possible moment. So, if you call `length([1, 2, 3])` inside quote,
   but no `length/1` function is available, it is then expanded in
   the caller:
 
@@ -1233,7 +1241,7 @@ defmodule Kernel.SpecialForms do
       [2, 4, 6, 8]
 
       # A comprehension with two generators
-      iex> for x <- [1, 2], y <- [2, 3], do: x*y
+      iex> for x <- [1, 2], y <- [2, 3], do: x * y
       [2, 3, 4, 6]
 
   Filters can also be given:
@@ -1255,7 +1263,7 @@ defmodule Kernel.SpecialForms do
   need to organize bitstring streams:
 
       iex> pixels = <<213, 45, 132, 64, 76, 32, 76, 0, 0, 234, 32, 15>>
-      iex> for <<r::8, g::8, b::8 <- pixels >>, do: {r, g, b}
+      iex> for <<r::8, g::8, b::8 <- pixels>>, do: {r, g, b}
       [{213, 45, 132}, {64, 76, 32}, {76, 0, 0}, {234, 32, 15}]
 
   Variable assignments inside the comprehension, be it in generators,
@@ -1293,7 +1301,7 @@ defmodule Kernel.SpecialForms do
       iex> opts = %{width: 10, height: 15}
       iex> with {:ok, width} <- Map.fetch(opts, :width),
       ...>      {:ok, height} <- Map.fetch(opts, :height),
-      ...>   do: {:ok, width * height}
+      ...>      do: {:ok, width * height}
       {:ok, 150}
 
   If all clauses match, the `do` block is executed, returning its result.
@@ -1302,14 +1310,14 @@ defmodule Kernel.SpecialForms do
       iex> opts = %{width: 10}
       iex> with {:ok, width} <- Map.fetch(opts, :width),
       ...>      {:ok, height} <- Map.fetch(opts, :height),
-      ...>   do: {:ok, width * height}
+      ...>      do: {:ok, width * height}
       :error
 
   Guards can be used in patterns as well:
 
       iex> users = %{"melany" => "guest", "bob" => :admin}
       iex> with {:ok, role} when not is_binary(role) <- Map.fetch(users, "bob"),
-      ...>   do: {:ok, to_string(role)}
+      ...>      do: {:ok, to_string(role)}
       {:ok, "admin"}
 
   As in `for/1`, variables bound inside `with/1` won't leak;
@@ -1320,7 +1328,7 @@ defmodule Kernel.SpecialForms do
       iex> with {:ok, width} <- Map.fetch(opts, :width),
       ...>      double_width = width * 2,
       ...>      {:ok, height} <- Map.fetch(opts, :height),
-      ...>   do: {:ok, double_width * height}
+      ...>      do: {:ok, double_width * height}
       {:ok, 300}
       iex> width
       nil
@@ -1743,7 +1751,7 @@ defmodule Kernel.SpecialForms do
             :infinity
         end
 
-  However when an else clause is present but the result of the expression
+  However, when an else clause is present but the result of the expression
   does not match any of the patterns an exception will be raised. This
   exception will not be caught by a catch or rescue in the same try:
 
@@ -1765,7 +1773,7 @@ defmodule Kernel.SpecialForms do
           :error_b
       end
 
-  Similarly an exception inside an else clause is not caught or rescued
+  Similarly, an exception inside an else clause is not caught or rescued
   inside the same try:
 
       try do
@@ -1841,7 +1849,7 @@ defmodule Kernel.SpecialForms do
       end
 
   An optional `after` clause can be given in case the message was not
-  received after the specified timeout period:
+  received after the given timeout period, specified in milliseconds:
 
       receive do
         {:selector, i, value} when is_integer(i) ->

@@ -25,15 +25,14 @@ defmodule Mix.Task do
 
     * `@shortdoc`  - makes the task public with a short description that appears
       on `mix help`
-    * `@recursive` - run the task recursively in umbrella projects
+    * `@recursive` - runs the task recursively in umbrella projects
     * `@preferred_cli_env` - recommends environment to run task. It is used in absence of
-      mix project recommendation, or explicit MIX_ENV.
+      a Mix project recommendation, or explicit `MIX_ENV`
 
   ## Documentation
 
-  Users can read the documentation for public Mix tasks by doing `mix help my_task`.
+  Users can read the documentation for public Mix tasks by running `mix help my_task`.
   The documentation that will be shown is the `@moduledoc` of the task's module.
-
   """
 
   @type task_name :: String.t | atom
@@ -146,7 +145,7 @@ defmodule Mix.Task do
   end
 
   @doc """
-  Gets preferred cli environment for the task.
+  Gets preferred CLI environment for the task.
 
   Returns environment (for example, `:test`, or `:prod`), or `nil`.
   """
@@ -189,7 +188,7 @@ defmodule Mix.Task do
   Receives a task name and returns the task module if found.
 
   Otherwise returns `nil` in case the module
-  exists but it isn't a task or cannot be found.
+  exists, but it isn't a task or cannot be found.
   """
   @spec get(task_name) :: task_module | nil
   def get(task) do
@@ -206,7 +205,6 @@ defmodule Mix.Task do
 
     * `Mix.NoTaskError`      - raised if the task could not be found
     * `Mix.InvalidTaskError` - raised if the task is not a valid `Mix.Task`
-
   """
   @spec get!(task_name) :: task_module | no_return
   def get!(task) do
@@ -236,7 +234,7 @@ defmodule Mix.Task do
   returns the result.
 
   If there is an alias with the same name, the alias
-  will be invoked instead of a task.
+  will be invoked instead of the original task.
 
   If the task or alias were already invoked, it does not
   run them again and simply aborts with `:noop`.
@@ -282,12 +280,12 @@ defmodule Mix.Task do
     recursive = recursive(module)
 
     cond do
-      recursive == true and Mix.Project.umbrella? ->
+      recursive && Mix.Project.umbrella? ->
         Mix.ProjectStack.recur fn ->
           recur(fn _ -> run(task, args) end)
         end
 
-      recursive == false and Mix.ProjectStack.recursing? ->
+      not recursive && Mix.ProjectStack.recursing() ->
         Mix.ProjectStack.root(fn -> run(task, args) end)
 
       true ->
@@ -358,21 +356,30 @@ defmodule Mix.Task do
   is called.
 
   If an umbrella project reenables a task, it is reenabled for all
-  children projects.
+  child projects.
   """
   @spec reenable(task_name) :: :ok
   def reenable(task) when is_binary(task) or is_atom(task) do
     task = to_string(task)
     proj = Mix.Project.get
+    recursive = (module = get(task)) && recursive(module)
 
     Mix.TasksServer.delete_many([{:task, task, proj},
                                  {:alias, task, proj}])
 
-   _ = if (module = get(task)) && recursive(module) && Mix.Project.umbrella? do
-      recur fn proj ->
+    cond do
+      recursive && Mix.Project.umbrella? ->
+        recur fn proj ->
+          Mix.TasksServer.delete_many([{:task, task, proj},
+                                       {:alias, task, proj}])
+        end
+
+      proj = !recursive && Mix.ProjectStack.recursing() ->
         Mix.TasksServer.delete_many([{:task, task, proj},
                                      {:alias, task, proj}])
-      end
+
+      true ->
+        :ok
     end
 
     :ok
@@ -383,7 +390,7 @@ defmodule Mix.Task do
     # as we leave the control of the deps path still to the
     # umbrella child.
     config = Mix.Project.deps_config |> Keyword.delete(:deps_path)
-    for %Mix.Dep{app: app, opts: opts} <- Mix.Dep.Umbrella.loaded do
+    for %Mix.Dep{app: app, opts: opts} <- Mix.Dep.Umbrella.cached do
       Mix.Project.in_project(app, opts[:path], config, fun)
     end
   end
@@ -392,7 +399,7 @@ defmodule Mix.Task do
   Reruns `task` with the given arguments.
 
   This function reruns the given task; to do that, it first re-enables the task
-  and then regularly runs it.
+  and then runs it as normal.
   """
   @spec rerun(task_name, [any]) :: any
   def rerun(task, args \\ []) do

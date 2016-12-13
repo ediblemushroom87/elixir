@@ -39,12 +39,12 @@ defmodule Kernel.ErrorsTest do
   end
 
   test "invalid identifier" do
-    msg = fn char, name -> "nofile:1: invalid character '#{char}' in identifier: #{name}" end
+    msg = fn name -> "nofile:1: invalid character \"@\" (codepoint U+0040) in token: #{name}" end
 
-    assert_compile_fail SyntaxError, msg.(:@, "foo@"), 'foo@'
-    assert_compile_fail SyntaxError, msg.(:@, "foo@"), 'foo@ '
-    assert_compile_fail SyntaxError, msg.(:@, "foo@bar"), 'foo@bar'
-    assert_compile_fail SyntaxError, msg.(:!, "Foo!"), 'Foo!'
+    assert_compile_fail SyntaxError, msg.("foo@"), 'foo@'
+    assert_compile_fail SyntaxError, msg.("foo@"), 'foo@ '
+    assert_compile_fail SyntaxError, msg.("foo@bar"), 'foo@bar'
+    assert_compile_fail SyntaxError, msg.("Foo@"), 'Foo@'
   end
 
   test "invalid fn" do
@@ -203,7 +203,7 @@ defmodule Kernel.ErrorsTest do
 
   test "clause with defaults" do
     assert_compile_fail CompileError,
-      "nofile:3: definitions with multiple clauses and default values require a function head",
+      "nofile:3: definitions with multiple clauses and default values require a header",
       ~C'''
       defmodule Kernel.ErrorsTest.ClauseWithDefaults1 do
         def hello(arg \\ 0), do: nil
@@ -356,6 +356,10 @@ defmodule Kernel.ErrorsTest do
     assert_compile_fail CompileError,
       "nofile:1: unknown key :age for struct Kernel.ErrorsTest.GoodStruct",
       '%#{GoodStruct}{age: 27} = %{}'
+
+    assert_compile_fail CompileError,
+      "nofile:1: unknown key ^field for struct Kernel.ErrorsTest.GoodStruct",
+      '%#{GoodStruct}{^field => 27} = %{}'
   end
 
   test "name for defmodule" do
@@ -412,7 +416,7 @@ defmodule Kernel.ErrorsTest do
       '(bar -> baz)'
   end
 
-  test "undefined non local function" do
+  test "undefined non-local function" do
     assert_compile_fail CompileError,
       "nofile:1: undefined function call/2",
       'call foo, do: :foo'
@@ -539,12 +543,14 @@ defmodule Kernel.ErrorsTest do
 
   test "import with invalid options" do
     assert_compile_fail CompileError,
-      "nofile:1: invalid :only option for import, expected a keyword list",
-      'import Kernel, only: [:invalid]'
+      "nofile:1: invalid :only option for import, " <>
+      "expected a keyword list with integer values",
+      'import Kernel, only: [invalid: nil]'
 
     assert_compile_fail CompileError,
-      "nofile:1: invalid :except option for import, expected a keyword list",
-      'import Kernel, except: [:invalid]'
+      "nofile:1: invalid :except option for import, " <>
+      "expected a keyword list with integer values",
+      'import Kernel, except: [invalid: nil]'
   end
 
   test "import with conflicting options" do
@@ -665,8 +671,6 @@ defmodule Kernel.ErrorsTest do
       "a binary, a boolean, or nil), got: \"Other\""
     assert_raise ArgumentError, message, fn ->
       defmodule DocAttributesFormat do
-        @moduledoc "ModuleTest"
-        {668, "ModuleTest"} = Module.get_attribute(__MODULE__, :moduledoc)
         Module.put_attribute(__MODULE__, :moduledoc, "Other")
       end
     end
@@ -681,7 +685,7 @@ defmodule Kernel.ErrorsTest do
 
   test "interpolation error" do
     assert_compile_fail SyntaxError,
-      "nofile:1: unexpected token: \")\". \"do\" starting at line 1 is missing terminator \"end\"",
+      "nofile:1: \"do\" is missing terminator \"end\". unexpected token: \")\" at line 1",
       '"foo\#{case 1 do )}bar"'
   end
 
@@ -830,7 +834,7 @@ defmodule Kernel.ErrorsTest do
 
   test "new line error" do
     assert_compile_fail SyntaxError,
-      "nofile:3: syntax error before: eol",
+      "nofile:3: unexpectedly reached end of line. The current expression is invalid or incomplete",
       'if true do\n  foo = [],\n  baz\nend'
   end
 
@@ -846,6 +850,14 @@ defmodule Kernel.ErrorsTest do
     assert_compile_fail SyntaxError,
       "nofile:1: syntax error before: ?す"
       ':ok ?す'
+  end
+
+  test "good error message on \"fn do expr end\"" do
+    assert_compile_fail SyntaxError,
+      "nofile:1: unexpected token \"do\". Anonymous functions are written as:\n\n" <>
+        "    fn pattern -> expression end\n\n" <>
+        "Syntax error before: do",
+      'fn do :ok end'
   end
 
   test "invalid var or function on guard" do
@@ -875,7 +887,7 @@ defmodule Kernel.ErrorsTest do
 
   test "invalid args for bodyless clause" do
     assert_compile_fail CompileError,
-      "nofile:2: can use only variables and \\\\ as arguments in function heads",
+      "nofile:2: can use only variables and \\\\ as arguments in definition header",
       '''
       defmodule Kernel.ErrorsTest.InvalidArgsForBodylessClause do
         def foo(arg // nil)
@@ -990,6 +1002,19 @@ defmodule Kernel.ErrorsTest do
       end
       """)
   end
+
+  test "failed remote call stacktrace includes file/line info" do
+    try do
+      bad_remote_call(1)
+    rescue
+      ArgumentError ->
+        stack = System.stacktrace
+        assert [{:erlang, :apply, [1, :foo, []], []},
+                {__MODULE__, :bad_remote_call, 1, [file: _, line: _]} | _] = stack
+    end
+  end
+
+  defp bad_remote_call(x), do: x.foo
 
   defmacro sample(0), do: 0
 

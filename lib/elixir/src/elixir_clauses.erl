@@ -183,9 +183,10 @@ normalize_vars(Key, {Ref, Counter, _Safe},
         {atom, 0, nil}
     end,
 
-  %% TODO: Unsafe vars should raise in future versions.
-  %% When we do so, we can unify the export vars mechanism.
-  %% For v2.0, we will never export them (or always raise in case/cond/try).
+  %% TODO: For v2.0, we will never export unsafe vars but
+  %% we need to consider if we want to raise or a emit a warning.
+  %% Such a warning should be applied consistently to the language
+  %% (for example, case/try/receive/fn/etc).
   Value = {Ref, Counter, false},
 
   VS = S#elixir_scope{
@@ -198,17 +199,17 @@ normalize_vars(Key, {Ref, Counter, _Safe},
 % Generate match vars by checking if they were updated
 % or not and assigning the previous value.
 
-generate_match_vars([{Key, Value, Expr} | T], ClauseVars, Left, Right) ->
+generate_match_vars([{Key, {Value, _, _}, Expr} | T], ClauseVars, Left, Right) ->
   case maps:find(Key, ClauseVars) of
-    {ok, Value} ->
+    {ok, {Value, _, _}} ->
       generate_match_vars(T, ClauseVars, Left, Right);
-    {ok, Clause} ->
+    {ok, {Clause, _, _}} ->
       generate_match_vars(T, ClauseVars,
-        [{var, 0, element(1, Value)} | Left],
-        [{var, 0, element(1, Clause)} | Right]);
+        [{var, 0, Value} | Left],
+        [{var, 0, Clause} | Right]);
     error ->
       generate_match_vars(T, ClauseVars,
-        [{var, 0, element(1, Value)} | Left], [Expr | Right])
+        [{var, 0, Value} | Left], [Expr | Right])
   end;
 
 generate_match_vars([], _ClauseVars, Left, Right) ->

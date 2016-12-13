@@ -98,6 +98,14 @@ defmodule Mix.RebarTest do
 
   end
 
+  test "convert Rebar config to dependency config" do
+    config = Mix.Rebar.load_config(fixture_path("rebar_dep"))
+    dep_config = Mix.Rebar.dependency_config(config)
+
+    assert config[:erl_opts] == [:warnings_as_errors]
+    assert dep_config[:erl_opts] == []
+  end
+
   test "parse Rebar dependencies from rebar.config" do
     Mix.Project.push(RebarAsDep)
 
@@ -106,7 +114,7 @@ defmodule Mix.RebarTest do
 
     assert Enum.find(deps, fn %Mix.Dep{app: app, opts: opts} ->
       if app == :git_rebar do
-        assert Enum.find(opts, &match?({:git, "../../test/fixtures/git_rebar"}, &1))
+        assert Enum.find(opts, &match?({:git, _}, &1))
         assert Enum.find(opts, &match?({:ref, "master"}, &1))
         true
       end
@@ -155,7 +163,7 @@ defmodule Mix.RebarTest do
 
     in_tmp "get and compile dependencies for Rebar", fn ->
       Mix.Tasks.Deps.Get.run []
-      assert_received {:mix_shell, :info, ["* Getting git_rebar (../../test/fixtures/git_rebar)"]}
+      assert_received {:mix_shell, :info, ["* Getting git_rebar" <> _]}
 
       Mix.Tasks.Deps.Compile.run []
       assert_received {:mix_shell, :run, ["===> Compiling git_rebar\n"]}
@@ -185,7 +193,7 @@ defmodule Mix.RebarTest do
 
     in_tmp "get and compile dependencies for rebar3", fn ->
       Mix.Tasks.Deps.Get.run []
-      assert_received {:mix_shell, :info, ["* Getting git_rebar (../../test/fixtures/git_rebar)"]}
+      assert_received {:mix_shell, :info, ["* Getting git_rebar " <> _]}
 
       Mix.Tasks.Deps.Compile.run []
       assert_received {:mix_shell, :run, ["===> Compiling git_rebar\n"]}

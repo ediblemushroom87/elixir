@@ -132,7 +132,7 @@ defmodule Mix.Compilers.Erlang do
         Mix.raise "Could not compile #{inspect Path.relative_to_cwd(input)} because " <>
                   "the application \"#{app}\" could not be found. This may happen if " <>
                   "your package manager broke Erlang into multiple packages and may " <>
-                  "be fixed by installing the missing \"erlang-dev\" and \"erlang-#{app}\" packages."
+                  "be fixed by installing the missing \"erlang-dev\" and \"erlang-#{app}\" packages"
     end
   end
 
@@ -150,6 +150,21 @@ defmodule Mix.Compilers.Erlang do
   """
   def to_erl_file(file) do
     to_charlist(file)
+  end
+
+  @doc """
+  Asserts that the `:erlc_paths` configuration option that many Mix tasks
+  rely on is valid.
+
+  Raises a `Mix.Error` exception if the option is not valid, returns `:ok`
+  otherwise.
+  """
+  def assert_valid_erlc_paths(erlc_paths) do
+    if is_list(erlc_paths) do
+      :ok
+    else
+      Mix.raise ":erlc_paths should be a list of paths, got: #{inspect(erlc_paths)}"
+    end
   end
 
   defp extract_targets(src_dir, src_ext, dest_dir, dest_ext, force) do

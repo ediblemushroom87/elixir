@@ -212,11 +212,9 @@ defmodule MacroTest do
     assert Macro.expand_once(expr, __ENV__) == expr
   end
 
-  @foo 1
-
   test "expand once does not expand module attributes" do
     message = "could not call get_attribute on module #{inspect(__MODULE__)} " <>
-      "because it was already compiled"
+              "because it was already compiled"
     assert_raise ArgumentError, message, fn ->
       Macro.expand_once(quote(do: @foo), __ENV__)
     end
@@ -277,6 +275,11 @@ defmodule MacroTest do
     assert Macro.to_string(quote do: Foo.Bar.baz(1, 2, 3)) == "Foo.Bar.baz(1, 2, 3)"
     assert Macro.to_string(quote do: Foo.Bar.baz([1, 2, 3])) == "Foo.Bar.baz([1, 2, 3])"
     assert Macro.to_string(quote do: Foo.bar(<<>>, [])) == "Foo.bar(<<>>, [])"
+  end
+
+  test "keyword call to string" do
+    assert Macro.to_string(quote do: Foo.bar(foo: :bar)) == "Foo.bar(foo: :bar)"
+    assert Macro.to_string(quote do: Foo.bar(["Elixir.Foo": :bar])) == "Foo.bar([{Foo, :bar}])"
   end
 
   test "sigil call to string" do
@@ -352,6 +355,17 @@ defmodule MacroTest do
         z
     end
     """
+
+    assert Macro.to_string(quote do: (fn(x) -> x end).(1)) == "(fn x -> x end).(1)"
+
+    assert Macro.to_string(quote do: (fn %{} -> :map; _ -> :other end).(1)) <> "\n" == """
+    (fn
+      %{} ->
+        :map
+      _ ->
+        :other
+    end).(1)
+    """
   end
 
   test "range to string" do
@@ -397,8 +411,10 @@ defmodule MacroTest do
     assert Macro.to_string(quote do: [])   == "[]"
     assert Macro.to_string(quote do: {1, 2, 3})   == "{1, 2, 3}"
     assert Macro.to_string(quote do: [ 1, 2, 3 ])   == "[1, 2, 3]"
+    assert Macro.to_string(quote do: ["Elixir.Foo": :bar]) == "[{Foo, :bar}]"
     assert Macro.to_string(quote do: %{})  == "%{}"
     assert Macro.to_string(quote do: %{:foo => :bar})  == "%{foo: :bar}"
+    assert Macro.to_string(quote do: %{:"Elixir.Foo" => :bar}) == "%{Foo => :bar}"
     assert Macro.to_string(quote do: %{{1, 2} => [1, 2, 3]})  == "%{{1, 2} => [1, 2, 3]}"
     assert Macro.to_string(quote do: %{map | "a" => "b"})  == "%{map | \"a\" => \"b\"}"
     assert Macro.to_string(quote do: [ 1, 2, 3 ])   == "[1, 2, 3]"
@@ -445,13 +461,22 @@ defmodule MacroTest do
   end
 
   test "bit syntax to string" do
+    ast = quote(do: <<1::8*4>>)
+    assert Macro.to_string(ast) == "<<1::8*4>>"
+
+    ast = quote(do: @type foo :: <<_::8, _::_*4>>)
+    assert Macro.to_string(ast) == "@type(foo :: <<_::8, _::_*4>>)"
+
     ast = quote(do: <<69 - 4::bits-size(8 - 4)-unit(1), 65>>)
     assert Macro.to_string(ast) == "<<69 - 4::bits-size(8 - 4)-unit(1), 65>>"
+
     ast = quote(do: << <<65>>, 65>>)
     assert Macro.to_string(ast) == "<<(<<65>>), 65>>"
+
     ast = quote(do: <<65, <<65>> >>)
     assert Macro.to_string(ast) == "<<65, (<<65>>)>>"
-    ast = quote do: for <<a::4 <- <<1, 2>> >>, do: a
+
+    ast = quote(do: (for <<a::4 <- <<1, 2>> >>, do: a))
     assert Macro.to_string(ast) == "for(<<(a :: 4 <- <<1, 2>>)>>) do\n  a\nend"
   end
 

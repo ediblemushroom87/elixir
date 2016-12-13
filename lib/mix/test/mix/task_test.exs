@@ -34,7 +34,7 @@ defmodule Mix.TaskTest do
     end
   end
 
-  test "run/2 converts OptionParser.ParseError into mix errors" do
+  test "run/2 converts OptionParser.ParseError into Mix errors" do
     assert_raise Mix.Error,
                  "Could not invoke task \"hello\": 1 error found!\n--unknown : Unknown option", fn ->
       Mix.Task.run("hello", ["--parser", "--unknown"])
@@ -124,7 +124,7 @@ defmodule Mix.TaskTest do
     assert Mix.Task.run("hello") == "Hello, World!"
   end
 
-  test "reenable/1 for umbrella" do
+  test "reenable/1 for recursive inside umbrella" do
     in_fixture "umbrella_dep/deps/umbrella", fn ->
       Mix.Project.in_project(:umbrella, ".", fn _ ->
         assert [:ok, :ok] = Mix.Task.run "clean"
@@ -133,6 +133,15 @@ defmodule Mix.TaskTest do
         Mix.Task.reenable "clean"
         assert [:ok, :ok] = Mix.Task.run "clean"
         assert :noop      = Mix.Task.run "clean"
+      end)
+    end
+  end
+
+  test "reenable/1 for non-recursive inside umbrella" do
+    in_fixture "umbrella_dep/deps/umbrella", fn ->
+      Mix.Project.in_project(:umbrella, ".", fn _ ->
+        assert [:ok, :ok] = Mix.Task.run "clean"
+        assert :ok = Mix.Task.run "loadpaths" # loadpaths is not recursive
       end)
     end
   end

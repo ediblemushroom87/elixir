@@ -12,22 +12,22 @@ defmodule Mix.Tasks.Local.Rebar do
   Fetches a copy of `rebar` or `rebar3` from the given path or URL.
 
   It defaults to safely download a Rebar copy from  Hex's CDN.
-  However, a URL can be given as argument, usually from an existing
+  However, a URL can be given as argument, usually for an existing
   local copy of Rebar:
 
       mix local.rebar rebar path/to/rebar
       mix local.rebar rebar3 path/to/rebar
 
-  If not specified both `rebar` and `rebar3` will be fetched.
+  If neither `rebar` or `rebar3` are specified, both versions will be fetched.
 
   The local copy is stored in your `MIX_HOME` (defaults to `~/.mix`).
   This version of Rebar will be used as required by `mix deps.compile`.
 
   ## Command line options
 
-    * `rebar PATH` - specify a path or URL for `rebar`
+    * `rebar PATH` - specifies a path or URL for `rebar`
 
-    * `rebar3 PATH` - specify a path or URL for `rebar3`
+    * `rebar3 PATH` - specifies a path or URL for `rebar3`
 
     * `--sha512` - checks the archive matches the given SHA-512 checksum
 

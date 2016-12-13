@@ -132,6 +132,12 @@ tokenize([], EndLine, _Column, #elixir_tokenizer{terminators=[{Start, {StartLine
   Message = io_lib:format("missing terminator: ~ts (for \"~ts\" starting at line ~B)", [End, Start, StartLine]),
   {error, {EndLine, Message, []}, [], Tokens};
 
+% VC merge conflict
+
+tokenize(("<<<<<<<" ++ _) = Original, Line, 1, _Scope, Tokens) ->
+  FirstLine = lists:takewhile(fun(C) -> C =/= $\n andalso C =/= $\r end, Original),
+  {error, {Line, "found an unexpected version control marker, please resolve the conflicts: ", FirstLine}, Original, Tokens};
+
 % Base integers
 
 tokenize([$0, $x, H | T], Line, Column, Scope, Tokens) when ?is_hex(H) ->
@@ -929,10 +935,10 @@ check_terminator({E, _}, [{S, _} | Terminators]) when
 check_terminator({E, {Line, _, _}}, [{Start, {StartLine, _, _}} | _]) when
     E == 'end'; E == ')'; E == ']'; E == '}'; E == '>>' ->
   End = terminator(Start),
-  MessagePrefix = "unexpected token: \"",
-  MessageSuffix = io_lib:format("\". \"~ts\" starting at line ~B is missing terminator \"~ts\"",
-                                [Start, StartLine, End]),
-  {error, {Line, {MessagePrefix, MessageSuffix}, [atom_to_list(E)]}};
+  MessagePrefix = io_lib:format("\"~ts\" is missing terminator \"~ts\". unexpected token: \"",
+                                [Start, End]),
+  MessageSuffix = io_lib:format("\" at line ~B", [Line]),
+  {error, {StartLine, {MessagePrefix, MessageSuffix}, [atom_to_list(E)]}};
 
 check_terminator({E, Line}, []) when
     E == 'end'; E == ')'; E == ']'; E == '}'; E == '>>' ->
@@ -966,6 +972,8 @@ check_keyword(_Line, _Column, _Length, Atom, [{capture_op, _, _} | _]) when ?ope
 check_keyword(DoLine, DoColumn, _Length, do, [{Identifier, {Line, Column, EndColumn}, Atom} | T]) when Identifier == identifier ->
   {ok, add_token_with_nl({do, {DoLine, DoColumn, DoColumn + 2}},
        [{do_identifier, {Line, Column, EndColumn}, Atom} | T])};
+check_keyword(_Line, _Column, _Length, do, [{'fn', _} | _]) ->
+  {error, do_with_fn_error("unexpected token \"do\""), "do"};
 check_keyword(Line, Column, _Length, do, Tokens) ->
   case do_keyword_valid(Tokens) of
     true  -> {ok, add_token_with_nl({do, {Line, Column, Column + 2}}, Tokens)};
@@ -1018,7 +1026,7 @@ keyword('catch')  -> block;
 keyword(_) -> false.
 
 invalid_character_error(Char) ->
-  "invalid character '" ++ [Char] ++ "' in identifier: ".
+  io_lib:format("invalid character \"~ts\" (codepoint U+~4.16.0B) in token: ", [[Char], Char]).
 
 invalid_do_error(Prefix) ->
   Prefix ++ ". In case you wanted to write a \"do\" expression, "
@@ -1029,7 +1037,12 @@ invalid_do_error(Prefix) ->
   "    else\n"
   "      :that\n"
   "    end\n\n"
-  "is syntax sugar for the Elixir construct:\n\n"
+  "is syntactic sugar for the Elixir construct:\n\n"
   "    if(some_condition?, do: :this, else: :that)\n\n"
   "where \"some_condition?\" is the first argument and the second argument is a keyword list.\n\n"
+  "Syntax error before: ".
+
+do_with_fn_error(Prefix) ->
+  Prefix ++ ". Anonymous functions are written as:\n\n"
+  "    fn pattern -> expression end\n\n"
   "Syntax error before: ".

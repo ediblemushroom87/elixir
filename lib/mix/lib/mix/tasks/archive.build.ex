@@ -7,26 +7,36 @@ defmodule Mix.Tasks.Archive.Build do
   Builds an archive according to the specification of the
   [Erlang Archive Format](http://www.erlang.org/doc/man/code.html).
 
+  Archives are meant to contain small projects, usually installed
+  locally. Archives may be installed into a Mix environment by
+  running `mix archive.install`. Once installed, the archive is
+  available to all Mix projects. For this reason, the functionality
+  behind archives is limited. For instance, archives do not include
+  dependencies, as those would conflict with any dependency in a
+  Mix project after the archive is installed. In general, we recommend
+  the usage of archives to be limited for extensions of Mix, such
+  as custom SCMs, package managers, etc. For general scripts to be
+  installed into machines, please see `mix escript.build`.
+
   The archive will be created in the current directory (which is
   expected to be the project root), unless an argument `-o` is
   provided with the file name.
 
-  Archives are meant to contain small projects, usually installed
-  locally.  By default, this command archives the current project
-  but the `-i` and `-o` options can be used to archive any directory.
-  For example, `mix archive.build` with no options translates to:
+  By default, this command archives the current project but the `-i`
+  option can be used to archive any directory. For example,
+  `mix archive.build` with no options translates to:
 
       mix archive.build -i _build/ENV/lib/APP -o APP-VERSION.ez
 
   ## Command line options
 
-    * `-o` - specify output file name.
+    * `-o` - specifies output file name.
       If there is a `mix.exs`, defaults to "APP-VERSION.ez".
 
-    * `-i` - specify the input directory to archive.
+    * `-i` - specifies the input directory to archive.
       If there is a `mix.exs`, defaults to the current application build.
 
-    * `--no-compile` - skip compilation.
+    * `--no-compile` - skips compilation.
       Only applies when `mix.exs` is available.
 
   """

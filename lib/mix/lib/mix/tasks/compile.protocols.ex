@@ -7,10 +7,9 @@ defmodule Mix.Tasks.Compile.Protocols do
   @moduledoc ~S"""
   Consolidates all protocols in all paths.
 
-  This task is automatically invoked whenever the project
-  enables `:consolidate_protocols` or `:build_embedded` in
-  its configuration. As `:consolidate_protocols` is enabled
-  in the default configuration, this is the default case.
+  This task is automatically invoked unless the project
+  disables the `:consolidate_protocols` option in their
+  configuration.
 
   ## Consolidation
 
@@ -19,7 +18,7 @@ defmodule Mix.Tasks.Compile.Protocols do
   protocol dispatches by not accounting for code loading.
 
   This task consolidates all protocols in the code path
-  and output the new binary files to the given directory
+  and outputs the new binary files to the given directory
   (defaults to "_build/MIX_ENV/consolidated").
 
   In case you are manually compiling protocols or building

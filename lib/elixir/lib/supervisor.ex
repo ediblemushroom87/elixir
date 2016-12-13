@@ -48,7 +48,7 @@ defmodule Supervisor do
 
       # Start the supervisor with our child
       {:ok, pid} = Supervisor.start_link(children, strategy: :one_for_one)
-      
+
       # There is one child worker started
       Supervisor.count_children(pid)
       #=> %{active: 1, specs: 1, supervisors: 0, workers: 1}
@@ -95,6 +95,7 @@ defmodule Supervisor do
   explicitly defining a supervision module:
 
       defmodule MyApp.Supervisor do
+        # Automatically imports Supervisor.Spec
         use Supervisor
 
         def start_link do
@@ -164,7 +165,7 @@ defmodule Supervisor do
 
       # Start the supervisor with our one child as a template
       {:ok, sup_pid} = Supervisor.start_link(children, strategy: :simple_one_for_one)
-      
+
       # No child worker is active yet until start_child is called
       Supervisor.count_children(sup_pid)
       #=> %{active: 0, specs: 1, supervisors: 0, workers: 0}
@@ -227,6 +228,9 @@ defmodule Supervisor do
     quote location: :keep do
       @behaviour Supervisor
       import Supervisor.Spec
+
+      @doc false
+      def init(arg)
     end
   end
 
@@ -295,14 +299,14 @@ defmodule Supervisor do
   end
 
   @doc """
-  Starts a supervisor module with the given `arg`.
+  Starts a supervisor process with the given `module` and `arg`.
 
-  To start the supervisor, the `init/1` callback will be invoked in the given
-  `module`, with `arg` as its argument. The `init/1` callback must return a
+  To start the supervisor, the `c:init/1` callback will be invoked in the given
+  `module`, with `arg` as its argument. The `c:init/1` callback must return a
   supervisor specification which can be created with the help of the functions
   in the `Supervisor.Spec` module (especially `Supervisor.Spec.supervise/2`).
 
-  If the `init/1` callback returns `:ignore`, this function returns
+  If the `c:init/1` callback returns `:ignore`, this function returns
   `:ignore` as well and the supervisor terminates with reason `:normal`.
   If it fails or returns an incorrect value, this function returns
   `{:error, term}` where `term` is a term with information about the
@@ -501,7 +505,7 @@ defmodule Supervisor do
   end
 
   @doc """
-  Stops the given supervisor with the given `reason`.
+  Synchronously stops the given supervisor with the given `reason`.
 
   It returns `:ok` if the supervisor terminates with the given
   reason. If it terminates with another reason, the call exits.

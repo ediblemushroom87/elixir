@@ -21,7 +21,7 @@ defmodule Kernel.DialyzerTest do
       System.put_env("HOME", System.user_home())
     end
 
-    # Add a few key elixir modules for types and macro functions
+    # Add a few key Elixir modules for types and macro functions
     mods = [Kernel, String, Keyword, Exception, Macro, Macro.Env, :elixir_env]
     files = Enum.map(mods, &:code.which/1)
     :dialyzer.run([analysis_type: :plt_build, output_plt: plt,
@@ -54,7 +54,6 @@ defmodule Kernel.DialyzerTest do
     {:ok, [outdir: dir, dialyzer: dialyzer]}
   end
 
-  @tag otp19: false
   test "no warnings on valid remote calls", context do
     copy_beam! context, Dialyzer.RemoteCall
     assert_dialyze_no_warnings! context
@@ -78,6 +77,18 @@ defmodule Kernel.DialyzerTest do
 
   test "no warnings on struct update", context do
     copy_beam! context, Dialyzer.StructUpdate
+    assert_dialyze_no_warnings! context
+  end
+
+  test "no warnings on protocol calls with opaque types", context do
+    copy_beam! context, Dialyzer.ProtocolOpaque
+    copy_beam! context, Dialyzer.ProtocolOpaque.Entity
+    copy_beam! context, Dialyzer.ProtocolOpaque.Duck
+    assert_dialyze_no_warnings! context
+  end
+
+  test "no warnings on and/2 and or/2", context do
+    copy_beam! context, Dialyzer.BooleanCheck
     assert_dialyze_no_warnings! context
   end
 

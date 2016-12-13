@@ -12,7 +12,7 @@ defmodule Mix.Tasks.Run do
       mix run my_script.exs
 
   This task provides a subset of the functionality available in the
-  `elixir` executable, including setting up the `System.argv`:
+  `elixir` executable, including setting up the `System.argv/0` arguments:
 
       mix run my_script.exs arg1 arg2 arg3
 
@@ -24,7 +24,7 @@ defmodule Mix.Tasks.Run do
   Before running any command, the task compiles and starts the current
   application. Those can be configured with the options below.
 
-  You may also pass option specific to the `elixir` executable as follows:
+  You may also pass options specific to the `elixir` executable as follows:
 
       elixir --sname hello -S mix run --no-halt
 
@@ -32,14 +32,14 @@ defmodule Mix.Tasks.Run do
 
     * `--config`, `-c`  - loads the given configuration file
     * `--eval`, `-e` - evaluate the given code
-    * `--require`, `-r` - require pattern before running the command
+    * `--require`, `-r` - requires pattern before running the command
     * `--parallel`, `-p` - makes all requires parallel
-    * `--no-compile` - do not compile even if files require compilation
-    * `--no-deps-check` - do not check dependencies
-    * `--no-archives-check` - do not check archives
-    * `--no-halt` - do not halt the system after running the command
-    * `--no-start` - do not start applications after compilation
-    * `--no-elixir-version-check` - do not check the Elixir version from mix.exs
+    * `--no-compile` - does not compile even if files require compilation
+    * `--no-deps-check` - does not check dependencies
+    * `--no-archives-check` - does not check archives
+    * `--no-halt` - does not halt the system after running the command
+    * `--no-start` - does not start applications after compilation
+    * `--no-elixir-version-check` - does not check the Elixir version from mix.exs
 
   """
 
@@ -85,7 +85,7 @@ defmodule Mix.Tasks.Run do
       end
     end
 
-    unless Keyword.get(opts, :halt, true), do: :timer.sleep(:infinity)
+    unless Keyword.get(opts, :halt, true), do: Process.sleep(:infinity)
     :ok
   end
 

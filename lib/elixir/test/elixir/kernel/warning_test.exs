@@ -9,13 +9,21 @@ defmodule Kernel.WarningTest do
   end
 
   test "unused variable" do
-    assert capture_err(fn ->
+    output = capture_err(fn ->
       Code.eval_string """
       defmodule Sample do
         def hello(arg), do: nil
+
+        if true do
+          user = :warning
+        else
+          :nothing
+        end
       end
       """
-    end) =~ "variable arg is unused"
+    end)
+    assert output =~ "variable \"arg\" is unused"
+    assert output =~ "variable \"user\" is unused"
   after
     purge Sample
   end
@@ -343,8 +351,8 @@ defmodule Kernel.WarningTest do
   test "unused guard" do
     assert capture_err(fn ->
       Code.eval_string """
-      defmodule Sample1 do
-        def is_atom_case do
+      defmodule Sample do
+        def atom_case do
           v = "bc"
           case v do
             _ when is_atom(v) -> :ok
@@ -354,11 +362,15 @@ defmodule Kernel.WarningTest do
       end
       """
     end) =~ "this check/guard will always yield the same result"
+  after
+    purge Sample
+  end
 
+  test "previous clause always matches" do
     assert capture_err(fn ->
       Code.eval_string """
-      defmodule Sample2 do
-        def is_binary_cond do
+      defmodule Sample do
+        def binary_cond do
           v = "bc"
           cond do
             is_binary(v) -> :bin
@@ -369,7 +381,7 @@ defmodule Kernel.WarningTest do
       """
     end) =~ "this clause cannot match because a previous clause at line 5 always matches"
   after
-    purge [Sample1, Sample2]
+    purge Sample
   end
 
   test "empty clause" do
@@ -379,7 +391,7 @@ defmodule Kernel.WarningTest do
         def hello
       end
       """
-    end) =~ "bodyless clause provided for nonexistent def hello/0"
+    end) =~ "implementation not provided for predefined def hello/0"
   after
     purge Sample1
   end
@@ -426,7 +438,7 @@ defmodule Kernel.WarningTest do
         def hello(arg \\ 0), do: nil
       end
       """
-    end) =~ "definitions with multiple clauses and default values require a function head"
+    end) =~ "definitions with multiple clauses and default values require a header"
   after
     purge Sample
   end
@@ -439,7 +451,7 @@ defmodule Kernel.WarningTest do
         def hello(arg), do: nil
       end
       """
-    end) =~ "definitions with multiple clauses and default values require a function head"
+    end) =~ "definitions with multiple clauses and default values require a header"
   after
     purge Sample
   end
@@ -620,7 +632,7 @@ defmodule Kernel.WarningTest do
       end
       """
     end)
-    assert output =~ "variable x is unused"
+    assert output =~ "variable \"x\" is unused"
     assert output =~ "sample:3"
   after
     purge Sample
@@ -668,6 +680,20 @@ defmodule Kernel.WarningTest do
     purge Sample
   end
 
+  test "attribute with no use" do
+    content = capture_err(fn ->
+      Code.eval_string """
+      defmodule Sample do
+        @at "Something"
+      end
+      """
+    end)
+    assert content =~ "module attribute @at was set but never used"
+    assert content =~ "nofile:2"
+  after
+    purge Sample
+  end
+
   test "typedoc with no type" do
     assert capture_err(fn ->
       Code.eval_string """
@@ -675,7 +701,7 @@ defmodule Kernel.WarningTest do
         @typedoc "Something"
       end
       """
-    end) =~ "@typedoc provided but no type follows it"
+    end) =~ "module attribute @typedoc was set but no type follows it"
   after
     purge Sample
   end
@@ -687,7 +713,7 @@ defmodule Kernel.WarningTest do
         @doc "Something"
       end
       """
-    end) =~ "@doc provided but no definition follows it"
+    end) =~ "module attribute @doc was set but no definition follows it"
   after
     purge Sample
   end

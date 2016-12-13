@@ -55,16 +55,16 @@ defmodule Mix.Tasks.Xref do
 
     * `--exclude` - paths to exclude
 
-    * `--source` - display all files that the given source file references (directly or indirectly)
+    * `--source` - displays all files that the given source file references (directly or indirectly)
 
-    * `--sink` - display all files that reference the given file (directly or indirectly)
+    * `--sink` - displays all files that reference the given file (directly or indirectly)
 
     * `--format` - can be set to one of:
 
-      * `pretty` - use Unicode codepoints for formatting the graph.
+      * `pretty` - uses Unicode codepoints for formatting the graph.
         This is the default except on Windows
 
-      * `plain` - do not use Unicode codepoints for formatting the graph.
+      * `plain` - does not use Unicode codepoints for formatting the graph.
         This is the default on Windows
 
       * `dot` - produces a DOT graph description in `xref_graph.dot` in the
@@ -77,13 +77,13 @@ defmodule Mix.Tasks.Xref do
 
   Those options are shared across all modes:
 
-    * `--no-compile` - do not compile even if files require compilation
+    * `--no-compile` - does not compile even if files require compilation
 
-    * `--no-deps-check` - do not check dependencies
+    * `--no-deps-check` - does not check dependencies
 
-    * `--no-archives-check` - do not check archives
+    * `--no-archives-check` - does not check archives
 
-    * `--no-elixir-version-check` - do not check the Elixir version from mix.exs
+    * `--no-elixir-version-check` - does not check the Elixir version from mix.exs
 
   ## Configuration
 
@@ -122,7 +122,7 @@ defmodule Mix.Tasks.Xref do
       ["graph"] ->
         graph(opts)
       _ ->
-        Mix.raise "xref doesn't support this command, see mix help xref for more information"
+        Mix.raise "xref doesn't support this command, see \"mix help xref\" for more information"
     end
   end
 
@@ -197,11 +197,11 @@ defmodule Mix.Tasks.Xref do
       skip?(module, func, arity) ->
         nil
       exports == :unknown_module ->
-        {Enum.sort(lines), :unknown_module, module, func, arity}
+        {Enum.sort(lines), :unknown_module, module, func, arity, nil}
       is_atom(exports) and not function_exported?(module, func, arity) ->
-        {Enum.sort(lines), :unknown_function, module, func, arity}
+        {Enum.sort(lines), :unknown_function, module, func, arity, nil}
       is_list(exports) and not {func, arity} in exports ->
-        {Enum.sort(lines), :unknown_function, module, func, arity}
+        {Enum.sort(lines), :unknown_function, module, func, arity, exports}
       true ->
         nil
     end
@@ -215,7 +215,7 @@ defmodule Mix.Tasks.Xref do
     |> Enum.each(&IO.write(format_entry(file, &1)))
   end
 
-  defp format_entry(file, {lines, _, module, function, arity}) do
+  defp format_entry(file, {lines, _, module, function, arity, _}) do
     for line <- lines do
       [Exception.format_file_line(file, line), ?\s, Exception.format_mfa(module, function, arity), ?\n]
     end
@@ -230,12 +230,16 @@ defmodule Mix.Tasks.Xref do
     |> Enum.each(&IO.write(:stderr, [prefix, format_warning(file, &1), ?\n]))
   end
 
-  defp format_warning(file, {lines, :unknown_function, module, function, arity}) do
-    ["function ", Exception.format_mfa(module, function, arity),
-     " is undefined or private\n" | format_file_lines(file, lines)]
+  defp format_warning(file, {lines, :unknown_function, module, function, arity, exports}) do
+    message =
+      [module: module, function: function, arity: arity, reason: :"function not exported", exports: exports]
+      |> UndefinedFunctionError.exception()
+      |> Exception.message()
+
+    [message, "\n", format_file_lines(file, lines)]
   end
 
-  defp format_warning(file, {lines, :unknown_module, module, function, arity}) do
+  defp format_warning(file, {lines, :unknown_module, module, function, arity, _}) do
     ["function ", Exception.format_mfa(module, function, arity),
      " is undefined (module #{inspect module} is not available)\n" | format_file_lines(file, lines)]
   end

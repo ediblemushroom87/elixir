@@ -36,10 +36,10 @@ defmodule Mix.Tasks.Compile.Erlang do
     * `:erlc_include_path` - directory for adding include files.
       Defaults to `"include"`.
 
-    * `:erlc_options` - compilation options that apply to Erlang's compiler.
-      `:debug_info` is enabled by default.
+    * `:erlc_options` - compilation options that apply to Erlang's
+      compiler. Defaults to `[:debug_info]`.
 
-      For a list of the many more available options,
+      For a complete list of options,
       see [`:compile.file/2`](http://www.erlang.org/doc/man/compile.html#file-2).
 
   For example, to configure the `erlc_options` for your Erlang project you
@@ -57,7 +57,8 @@ defmodule Mix.Tasks.Compile.Erlang do
     {opts, _, _} = OptionParser.parse(args, switches: [force: :boolean])
     project      = Mix.Project.config
     source_paths = project[:erlc_paths]
-    files        = Mix.Utils.extract_files(source_paths, [:erl])
+    Mix.Compilers.Erlang.assert_valid_erlc_paths(source_paths)
+    files = Mix.Utils.extract_files(source_paths, [:erl])
     do_run(files, opts, project, source_paths)
   end
 
@@ -67,6 +68,9 @@ defmodule Mix.Tasks.Compile.Erlang do
     compile_path = to_erl_file Mix.Project.compile_path(project)
 
     erlc_options = project[:erlc_options] || []
+    unless is_list(erlc_options) do
+      Mix.raise ":erlc_options should be a list of options, got: #{inspect(erlc_options)}"
+    end
     erlc_options = erlc_options ++ [{:outdir, compile_path}, {:i, include_path}, :report]
     erlc_options = Enum.map erlc_options, fn
       {kind, dir} when kind in [:i, :outdir] ->

@@ -6,18 +6,19 @@ defmodule Mix.Tasks.Archive.Install do
   @moduledoc """
   Installs an archive locally.
 
-  If no argument is supplied but there is an archive in the project's root directory
-  (created with `mix archive.build`), then the archive will be installed
-  locally. For example:
+  If no argument is supplied but there is an archive in the project's
+  root directory (created with `mix archive.build`), then the archive
+  will be installed locally. For example:
 
       mix do archive.build, archive.install
 
-  If an argument is provided, it should be a local path or a URL to a prebuilt archive,
-  a git repository, a github repository, or a hex package.
+  If an argument is provided, it should be a local path or a URL to a
+  prebuilt archive, a Git repository, a GitHub repository, or a Hex
+  package.
 
       mix archive.install archive.ez
       mix archive.install path/to/archive.ez
-      mix archive.install https://example.com/myarchive.ez
+      mix archive.install https://example.com/my_archive.ez
       mix archive.install git https://path/to/git/repo
       mix archive.install git https://path/to/git/repo branch git_branch
       mix archive.install git https://path/to/git/repo tag git_tag
@@ -40,10 +41,10 @@ defmodule Mix.Tasks.Archive.Install do
     * `--force` - forces installation without a shell prompt; primarily
       intended for automation in build systems like `make`
 
-    * `--submodules` - fetch repository submodules before building archive from
+    * `--submodules` - fetches repository submodules before building archive from
       git or github
 
-    * `--app` - specify a custom app name to be used for building the archive
+    * `--app` - specifies a custom app name to be used for building the archive
       from git, github, or hex
   """
 

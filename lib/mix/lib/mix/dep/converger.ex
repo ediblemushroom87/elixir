@@ -48,6 +48,7 @@ defmodule Mix.Dep.Converger do
   """
   def converge(acc, lock, opts, callback) do
     {deps, acc, lock} = all(acc, lock, opts, callback)
+    if remote = Mix.RemoteConverger.get, do: remote.post_converge()
     {topsort(deps), acc, lock}
   end
 
@@ -85,7 +86,7 @@ defmodule Mix.Dep.Converger do
     if not diverged? and use_remote? do
       # If there is a lock, it means we are doing a get/update
       # and we need to hit the remote converger which do external
-      # requests and what not. In case of deps.loadpths, deps and so
+      # requests and what not. In case of deps.loadpaths, deps and so
       # on, there is no lock, so we won't hit this branch.
       lock = if lock_given?, do: remote.converge(deps, lock), else: lock
 
@@ -113,6 +114,7 @@ defmodule Mix.Dep.Converger do
 
   defp all(main, apps, callback, rest, lock, env, cache) do
     {deps, rest, lock} = all(main, [], [], apps, callback, rest, lock, env, cache)
+    deps = Enum.reverse(deps)
     # When traversing dependencies, we keep skipped ones to
     # find conflicts. We remove them now after traversal.
     {deps, _} = Mix.Dep.Loader.partition_by_env(deps, env)
@@ -190,7 +192,7 @@ defmodule Mix.Dep.Converger do
   end
 
   defp all([], acc, _upper, _current, _callback, rest, lock, _env, _cache) do
-    {Enum.reverse(acc), rest, lock}
+    {acc, rest, lock}
   end
 
   defp put_lock(%Mix.Dep{app: app} = dep, lock) do

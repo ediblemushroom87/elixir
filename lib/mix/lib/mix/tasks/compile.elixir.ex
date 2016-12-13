@@ -7,21 +7,21 @@ defmodule Mix.Tasks.Compile.Elixir do
   @moduledoc """
   Compiles Elixir source files.
 
-  Elixir is smart enough to recompile only files that changed
+  Elixir is smart enough to recompile only files that have changed
   and their dependencies. This means if `lib/a.ex` is invoking
   a function defined over `lib/b.ex`, whenever `lib/b.ex` changes,
   `lib/a.ex` is also recompiled.
 
-  Note it is important to recompile a file dependencies because
-  often there are compilation time dependencies between them.
+  Note it is important to recompile a file's dependencies as
+  there are often compile time dependencies between them.
 
   ## Command line options
 
     * `--force` - forces compilation regardless of modification times
-    * `--docs` (`--no-docs`) - attach (or not) documentation to compiled modules
-    * `--debug-info` (`--no-debug-info`) - attach (or not) debug info to compiled modules
-    * `--ignore-module-conflict` - do not emit warnings if a module was previously defined
-    * `--warnings-as-errors` - treat warnings as errors and return a non-zero exit code
+    * `--docs` (`--no-docs`) - attaches (or not) documentation to compiled modules
+    * `--debug-info` (`--no-debug-info`) - attaches (or not) debug info to compiled modules
+    * `--ignore-module-conflict` - does not emit warnings if a module was previously defined
+    * `--warnings-as-errors` - treats warnings as errors and return a non-zero exit code
     * `--long-compilation-threshold N` - sets the "long compilation" threshold
       (in seconds) to `N` (see the docs for `Kernel.ParallelCompiler.files/2`)
 
@@ -53,6 +53,10 @@ defmodule Mix.Tasks.Compile.Elixir do
     project = Mix.Project.config
     dest = Mix.Project.compile_path(project)
     srcs = project[:elixirc_paths]
+
+    unless is_list(srcs) do
+      Mix.raise ":elixirc_paths should be a list of paths, got: #{inspect(srcs)}"
+    end
 
     manifest = manifest()
     configs  = Mix.Project.config_files ++ Mix.Tasks.Compile.Erlang.manifests

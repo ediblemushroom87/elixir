@@ -4,6 +4,17 @@ defmodule EnumTest do
   use ExUnit.Case, async: true
   doctest Enum
 
+  defp assert_runs_enumeration_only_once(enum_fun) do
+    enumerator = Stream.map([:element], fn element ->
+      send(self(), element)
+      element
+    end)
+
+    enum_fun.(enumerator)
+    assert_received :element
+    refute_received :element
+  end
+
   test "all?/2" do
     assert Enum.all?([2, 4, 6])
     refute Enum.all?([2, nil, 4])
@@ -61,15 +72,16 @@ defmodule EnumTest do
     assert Enum.concat([[], []]) == []
     assert Enum.concat([[]])     == []
     assert Enum.concat([])       == []
-
-    assert Enum.concat([1..5, fn acc, _ -> acc end, [1]]) == [1, 2, 3, 4, 5, 1]
   end
 
   test "concat/2" do
     assert Enum.concat([], [1]) == [1]
     assert Enum.concat([1, [2], 3], [4, 5]) == [1, [2], 3, 4, 5]
 
+    assert Enum.concat([1, 2], 3..5) == [1, 2, 3, 4, 5]
+
     assert Enum.concat([], []) == []
+    assert Enum.concat([], 1..3) == [1, 2, 3]
 
     assert Enum.concat(fn acc, _ -> acc end, [1]) == [1]
   end
@@ -187,7 +199,7 @@ defmodule EnumTest do
     assert Enum.filter([1, 2, false, 3, nil], & &1) == [1, 2, 3]
     assert Enum.filter([1, 2, 3], &match?(1, &1)) == [1]
     assert Enum.filter([1, 2, 3], &match?(x when x < 3, &1)) == [1, 2]
-    assert Enum.filter([1, 2, 3], &match?(_, &1)) == [1, 2, 3]
+    assert Enum.filter([1, 2, 3], fn _ -> true end) == [1, 2, 3]
   end
 
   test "filter_map/3" do
@@ -268,6 +280,21 @@ defmodule EnumTest do
     assert Enum.map([1, 2, 3], fn x -> x * 2 end) == [2, 4, 6]
   end
 
+  test "map_every/3" do
+    assert Enum.map_every([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 2, fn x -> x * 2 end) == [2, 2, 6, 4, 10, 6, 14, 8, 18, 10]
+    assert Enum.map_every([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 3, fn x -> x * 2 end) == [2, 2, 3, 8, 5, 6, 14, 8, 9, 20]
+    assert Enum.map_every([], 2, fn x -> x * 2 end) == []
+    assert Enum.map_every([1, 2], 2, fn x -> x * 2 end) == [2, 2]
+    assert Enum.map_every([1, 2, 3], 0, fn x -> x * 2 end) == [1, 2, 3]
+    assert Enum.map_every(1..3, 1, fn x -> x * 2 end) == [2, 4, 6]
+    assert_raise FunctionClauseError, fn ->
+      Enum.map_every([1, 2, 3], -1, fn x -> x * 2 end)
+    end
+    assert_raise FunctionClauseError, fn ->
+      Enum.map_every(1..10, 3.33, fn x -> x * 2 end)
+    end
+  end
+
   test "map_join/3" do
     assert Enum.map_join([], " = ", &(&1 * 2)) == ""
     assert Enum.map_join([1, 2, 3], " = ", &(&1 * 2)) == "2 = 4 = 6"
@@ -291,6 +318,15 @@ defmodule EnumTest do
     end
   end
 
+  test "max/2" do
+    assert Enum.max([1], fn -> nil end) == 1
+    assert Enum.max([1, 2, 3], fn -> nil end) == 3
+    assert Enum.max([1, [], :a, {}], fn -> nil end) == []
+    assert Enum.max([], fn -> :empty_value end) == :empty_value
+    assert Enum.max(%{}, fn -> :empty_value end) == :empty_value
+    assert_runs_enumeration_only_once(&Enum.max(&1, fn -> nil end))
+  end
+
   test "max_by/2" do
     assert Enum.max_by(["a", "aa", "aaa"], fn(x) -> String.length(x) end) == "aaa"
     assert_raise Enum.EmptyError, fn ->
@@ -299,6 +335,14 @@ defmodule EnumTest do
     assert_raise Enum.EmptyError, fn ->
       Enum.max_by(%{}, &(&1))
     end
+  end
+
+  test "max_by/3" do
+    assert Enum.max_by(["a", "aa", "aaa"], fn(x) -> String.length(x) end, fn -> nil end) == "aaa"
+    assert Enum.max_by([], fn(x) -> String.length(x) end, fn -> :empty_value end) == :empty_value
+    assert Enum.max_by(%{}, &(&1), fn -> :empty_value end) == :empty_value
+    assert Enum.max_by(%{}, &(&1), fn -> {:a, :tuple} end) == {:a, :tuple}
+    assert_runs_enumeration_only_once(&Enum.max_by(&1, fn e -> e end, fn -> nil end))
   end
 
   test "member?/2" do
@@ -314,9 +358,15 @@ defmodule EnumTest do
     assert_raise Enum.EmptyError, fn ->
       Enum.min([])
     end
-    assert_raise Enum.EmptyError, fn ->
-      Enum.min_by(%{}, &(&1))
-    end
+  end
+
+  test "min/2" do
+    assert Enum.min([1], fn -> nil end) == 1
+    assert Enum.min([1, 2, 3], fn -> nil end) == 1
+    assert Enum.min([[], :a, {}], fn -> nil end) == :a
+    assert Enum.min([], fn -> :empty_value end) == :empty_value
+    assert Enum.min(%{}, fn -> :empty_value end) == :empty_value
+    assert_runs_enumeration_only_once(&Enum.min(&1, fn -> nil end))
   end
 
   test "min_by/2" do
@@ -324,6 +374,17 @@ defmodule EnumTest do
     assert_raise Enum.EmptyError, fn ->
       Enum.min_by([], fn(x) -> String.length(x) end)
     end
+    assert_raise Enum.EmptyError, fn ->
+      Enum.min_by(%{}, &(&1))
+    end
+  end
+
+  test "min_by/3" do
+    assert Enum.min_by(["a", "aa", "aaa"], fn(x) -> String.length(x) end, fn -> nil end) == "a"
+    assert Enum.min_by([], fn(x) -> String.length(x) end, fn -> :empty_value end) == :empty_value
+    assert Enum.min_by(%{}, &(&1), fn -> :empty_value end) == :empty_value
+    assert Enum.min_by(%{}, &(&1), fn -> {:a, :tuple} end) == {:a, :tuple}
+    assert_runs_enumeration_only_once(&Enum.min_by(&1, fn e -> e end, fn -> nil end))
   end
 
   test "min_max/1" do
@@ -335,11 +396,27 @@ defmodule EnumTest do
     end
   end
 
+  test "min_max/2" do
+    assert Enum.min_max([1], fn -> nil end) == {1, 1}
+    assert Enum.min_max([2, 3, 1], fn -> nil end) == {1, 3}
+    assert Enum.min_max([[], :a, {}], fn -> nil end) == {:a, []}
+    assert Enum.min_max([], fn -> {:empty_min, :empty_max} end) == {:empty_min, :empty_max}
+    assert Enum.min_max(%{}, fn -> {:empty_min, :empty_max} end) == {:empty_min, :empty_max}
+    assert_runs_enumeration_only_once(&Enum.min_max(&1, fn -> nil end))
+  end
+
   test "min_max_by/2" do
     assert Enum.min_max_by(["aaa", "a", "aa"], fn(x) -> String.length(x) end) == {"a", "aaa"}
     assert_raise Enum.EmptyError, fn ->
       Enum.min_max_by([], fn(x) -> String.length(x) end)
     end
+  end
+
+  test "min_max_by/3" do
+    assert Enum.min_max_by(["aaa", "a", "aa"], fn(x) -> String.length(x) end, fn -> nil end) == {"a", "aaa"}
+    assert Enum.min_max_by([], fn(x) -> String.length(x) end, fn -> {:no_min, :no_max} end) == {:no_min, :no_max}
+    assert Enum.min_max_by(%{}, fn(x) -> String.length(x) end, fn -> {:no_min, :no_max} end) == {:no_min, :no_max}
+    assert_runs_enumeration_only_once(&Enum.min_max_by(&1, fn x -> x end, fn -> nil end))
   end
 
   test "split_with/2" do
@@ -683,6 +760,20 @@ defmodule EnumTest do
     assert Enum.zip([1], []) == []
     assert Enum.zip([], [])  == []
   end
+
+  test "zip/1" do
+    assert Enum.zip([[:a, :b], [1, 2], ["foo", "bar"]]) == [{:a, 1, "foo"}, {:b, 2, "bar"}]
+    assert Enum.zip([[:a, :b], [1, 2, 3, 4], ["foo", "bar", "baz", "qux"]]) == [{:a, 1, "foo"}, {:b, 2, "bar"}]
+    assert Enum.zip([[:a, :b, :c, :d], [1, 2], ["foo", "bar", "baz", "qux"]]) == [{:a, 1, "foo"}, {:b, 2, "bar"}]
+    assert Enum.zip([[:a, :b, :c, :d], [1, 2, 3, 4], ["foo", "bar"]]) == [{:a, 1, "foo"}, {:b, 2, "bar"}]
+    assert Enum.zip([1..10, ["foo", "bar"]]) == [{1, "foo"}, {2, "bar"}]
+
+    assert Enum.zip([]) == []
+    assert Enum.zip([[]]) == []
+    assert Enum.zip([[1]]) == [{1}]
+
+    assert Enum.zip([[], [], [], []])  == []
+  end
 end
 
 defmodule EnumTest.Range do
@@ -728,12 +819,15 @@ defmodule EnumTest.Range do
   end
 
   test "concat/1" do
-    assert Enum.concat(1..3, []) == [1, 2, 3]
-    assert Enum.concat(1..3, 0..0) == [1, 2, 3, 0]
+    assert Enum.concat([1..2, 4..6]) == [1, 2, 4, 5, 6]
+    assert Enum.concat([1..5, fn acc, _ -> acc end, [1]]) == [1, 2, 3, 4, 5, 1]
   end
 
   test "concat/2" do
     assert Enum.concat(1..3, 4..5) == [1, 2, 3, 4, 5]
+    assert Enum.concat(1..3, [4, 5]) == [1, 2, 3, 4, 5]
+    assert Enum.concat(1..3, []) == [1, 2, 3]
+    assert Enum.concat(1..3, 0..0) == [1, 2, 3, 0]
   end
 
   test "count/1" do
@@ -868,7 +962,7 @@ defmodule EnumTest.Range do
 
     assert Enum.filter(1..3, &match?(1, &1)) == [1]
     assert Enum.filter(1..3, &match?(x when x < 3, &1)) == [1, 2]
-    assert Enum.filter(1..3, &match?(_, &1)) == [1, 2, 3]
+    assert Enum.filter(1..3, fn _ -> true end) == [1, 2, 3]
   end
 
   test "filter_map/3" do
@@ -932,6 +1026,16 @@ defmodule EnumTest.Range do
   test "map/2" do
     assert Enum.map(1..3, fn x -> x * 2 end) == [2, 4, 6]
     assert Enum.map(-1..-3, fn x -> x * 2 end) == [-2, -4, -6]
+  end
+
+  test "map_every/3" do
+    assert Enum.map_every(1..10, 2, fn x -> x * 2 end) == [2, 2, 6, 4, 10, 6, 14, 8, 18, 10]
+    assert Enum.map_every(-1..-10, 2, fn x -> x * 2 end) == [-2, -2, -6, -4, -10, -6, -14, -8, -18, -10]
+    assert Enum.map_every(1..2, 2, fn x -> x * 2 end) == [2, 2]
+    assert Enum.map_every(1..3, 0, fn x -> x * 2 end) == [1, 2, 3]
+    assert_raise FunctionClauseError, fn ->
+      Enum.map_every(1..3, -1, fn x -> x * 2 end)
+    end
   end
 
   test "map_join/3" do
@@ -1078,7 +1182,6 @@ defmodule EnumTest.Range do
     assert Enum.slice(1..5, -5..-1) == [1, 2, 3, 4, 5]
     assert Enum.slice(1..5, -5..-3) == [1, 2, 3]
     assert Enum.slice(1..5, -6..-1) == []
-    assert Enum.slice(1..5, -6..-3) == []
     assert_raise ArgumentError, fn ->
       x = 1.1
       Enum.slice(1..5, x..2)
@@ -1087,6 +1190,23 @@ defmodule EnumTest.Range do
       x = 1.9
       Enum.slice(1..5, 1..x)
     end
+
+    assert Enum.slice(5..1, 0..0) == [5]
+    assert Enum.slice(5..1, 0..1) == [5, 4]
+    assert Enum.slice(5..1, 0..2) == [5, 4, 3]
+    assert Enum.slice(5..1, 1..2) == [4, 3]
+    assert Enum.slice(5..1, 1..0) == []
+    assert Enum.slice(5..1, 2..5) == [3, 2, 1]
+    assert Enum.slice(5..1, 2..6) == [3, 2, 1]
+    assert Enum.slice(5..1, 4..4) == [1]
+    assert Enum.slice(5..1, 5..5) == []
+    assert Enum.slice(5..1, 6..5) == []
+    assert Enum.slice(5..1, 6..0) == []
+    assert Enum.slice(5..1, -6..0) == []
+    assert Enum.slice(5..1, -6..5) == []
+    assert Enum.slice(5..1, -5..-1) == [5, 4, 3, 2, 1]
+    assert Enum.slice(5..1, -5..-3) == [5, 4, 3]
+    assert Enum.slice(5..1, -6..-1) == []
   end
 
   test "slice/3" do
@@ -1095,7 +1215,7 @@ defmodule EnumTest.Range do
     assert Enum.slice(1..5, 0, 2) == [1, 2]
     assert Enum.slice(1..5, 1, 2) == [2, 3]
     assert Enum.slice(1..5, 1, 0) == []
-    assert Enum.slice(1..5, 2, 5) == [3, 4, 5]
+    assert Enum.slice(1..5, 2, 3) == [3, 4, 5]
     assert Enum.slice(1..5, 2, 6) == [3, 4, 5]
     assert Enum.slice(1..5, 5, 5) == []
     assert Enum.slice(1..5, 6, 5) == []
@@ -1113,6 +1233,20 @@ defmodule EnumTest.Range do
     assert_raise FunctionClauseError, fn ->
       Enum.slice(1..5, 0, 0.99)
     end
+
+    assert Enum.slice(5..1, 0, 0) == []
+    assert Enum.slice(5..1, 0, 1) == [5]
+    assert Enum.slice(5..1, 0, 2) == [5, 4]
+    assert Enum.slice(5..1, 1, 2) == [4, 3]
+    assert Enum.slice(5..1, 1, 0) == []
+    assert Enum.slice(5..1, 2, 3) == [3, 2, 1]
+    assert Enum.slice(5..1, 2, 6) == [3, 2, 1]
+    assert Enum.slice(5..1, 4, 4) == [1]
+    assert Enum.slice(5..1, 5, 5) == []
+    assert Enum.slice(5..1, 6, 5) == []
+    assert Enum.slice(5..1, 6, 0) == []
+    assert Enum.slice(5..1, -6, 0) == []
+    assert Enum.slice(5..1, -6, 5) == []
   end
 
   test "sort/1" do

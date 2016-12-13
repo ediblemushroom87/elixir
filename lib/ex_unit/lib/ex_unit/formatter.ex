@@ -1,10 +1,9 @@
 defmodule ExUnit.Formatter do
   @moduledoc """
-  This module holds helper functions related to formatting and contains
-  documentation about the formatting protocol.
+  Helper functions for formatting and the formatting protocols.
 
-  Formatters are registered at the `ExUnit.EventManager` event manager and
-  will be send events by the runner.
+  Formatters are `GenServer`s specified during ExUnit configuration
+  that receives a series of events as cast messages.
 
   The following events are possible:
 
@@ -253,11 +252,17 @@ defmodule ExUnit.Formatter do
   end
 
   defp colorize_diff({:del, content}, formatter, {left, right}) do
-    {[left | formatter.(:diff_delete, content)], right}
+    format = colorize_format(content, :diff_delete, :diff_delete_whitespace)
+    {[left | formatter.(format, content)], right}
   end
 
   defp colorize_diff({:ins, content}, formatter, {left, right}) do
-    {left, [right | formatter.(:diff_insert, content)]}
+    format = colorize_format(content, :diff_insert, :diff_insert_whitespace)
+    {left, [right | formatter.(format, content)]}
+  end
+
+  defp colorize_format(content, normal, whitespace) do
+    if String.trim_leading(content) == "", do: whitespace, else: normal
   end
 
   defp edit_script(left, right) do
@@ -298,7 +303,7 @@ defmodule ExUnit.Formatter do
   defp with_counter(counter, msg) when counter < 100 do  " #{counter}) #{msg}" end
   defp with_counter(counter, msg)                    do   "#{counter}) #{msg}" end
 
-  defp test_case_info(msg, nil),       do: msg <> "failure on setup_all callback, tests invalidated\n"
+  defp test_case_info(msg, nil),       do: msg <> "failure on setup_all callback, test invalidated\n"
   defp test_case_info(msg, formatter), do: test_case_info(formatter.(:test_case_info, msg), nil)
 
   defp test_info(msg, nil),       do: msg <> "\n"

@@ -82,6 +82,7 @@ translate_struct(Meta, Name, {'%{}', MapMeta, Args}, S) ->
   case Operation of
     update ->
       Ann = ?ann(Meta),
+      Generated = ?generated(Meta),
       {VarName, _, VS} = elixir_scope:build_var('_', US),
 
       Var = {var, Ann, VarName},
@@ -92,9 +93,9 @@ translate_struct(Meta, Name, {'%{}', MapMeta, Args}, S) ->
 
       {TMap, TS} = translate_map(MapMeta, Assocs, Var, VS),
 
-      {{'case', ?generated, TUpdate, [
+      {{'case', Generated, TUpdate, [
         {clause, Ann, [Match], [], [TMap]},
-        {clause, ?generated, [Var], [], [elixir_utils:erl_call(Ann, erlang, error, [Error])]}
+        {clause, Generated, [Var], [], [elixir_utils:erl_call(Ann, erlang, error, [Error])]}
       ]}, TS};
     match ->
       translate_map(MapMeta, Assocs ++ [{'__struct__', Name}], nil, US);
@@ -206,5 +207,5 @@ build_map(Ann, TUpdate, TArgs, SA) -> {{map, Ann, TUpdate, TArgs}, SA}.
 assert_struct_keys(Meta, Name, Struct, Assocs, S) ->
   [begin
      compile_error(Meta, S#elixir_scope.file, "unknown key ~ts for struct ~ts",
-                   ['Elixir.Kernel':inspect(Key), elixir_aliases:inspect(Name)])
+                   ['Elixir.Macro':to_string(Key), elixir_aliases:inspect(Name)])
    end || {Key, _} <- Assocs, not maps:is_key(Key, Struct)].

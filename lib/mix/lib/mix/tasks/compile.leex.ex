@@ -30,7 +30,7 @@ defmodule Mix.Tasks.Compile.Leex do
     * `:leex_options` - compilation options that apply
       to Leex's compiler.
 
-      For a list of the many more available options,
+      For a complete list of options,
       see [`:leex.file/2`](http://www.erlang.org/doc/man/leex.html#file-2).
       Note that the `:report`, `:return_errors`, and `:return_warnings` options
       are overridden by this compiler, thus setting them has no effect.
@@ -44,10 +44,16 @@ defmodule Mix.Tasks.Compile.Leex do
   def run(args) do
     {opts, _, _} = OptionParser.parse(args, switches: [force: :boolean, verbose: :boolean])
 
-    project      = Mix.Project.config
+    project = Mix.Project.config
+
     source_paths = project[:erlc_paths]
-    mappings     = Enum.zip(source_paths, source_paths)
-    options      = project[:leex_options] || []
+    Mix.Compilers.Erlang.assert_valid_erlc_paths(source_paths)
+    mappings = Enum.zip(source_paths, source_paths)
+
+    options = project[:leex_options] || []
+    unless is_list(options) do
+      Mix.raise ":leex_options should be a list of options, got: #{inspect(options)}"
+    end
 
     Erlang.compile(manifest(), mappings, :xrl, :erl, opts, fn
       input, output ->

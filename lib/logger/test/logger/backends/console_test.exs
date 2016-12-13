@@ -1,11 +1,13 @@
 defmodule Logger.Backends.ConsoleTest do
   use Logger.Case
+
   require Logger
+  import ExUnit.CaptureIO
 
   setup do
     on_exit fn ->
       :ok = Logger.configure_backend(:console,
-              [format: nil, level: nil, metadata: [], colors: [enabled: false]])
+              [format: nil, device: :user, level: nil, metadata: [], colors: [enabled: false]])
     end
   end
 
@@ -15,13 +17,22 @@ defmodule Logger.Backends.ConsoleTest do
 
     try do
       Process.unregister(:user)
-      assert GenEvent.add_handler(Logger, Logger.Backends.Console, :console) ==
+      assert :gen_event.add_handler(Logger, Logger.Backends.Console, :console) ==
              {:error, :ignore}
     after
       Process.register(user, :user)
     end
   after
     {:ok, _} = Logger.add_backend(:console)
+  end
+
+  test "may use another device" do
+    Logger.configure_backend(:console, device: :standard_error)
+
+    assert capture_io(:standard_error, fn ->
+      Logger.debug("hello")
+      Logger.flush()
+    end) =~ "hello"
   end
 
   test "can configure format" do
@@ -108,5 +119,13 @@ defmodule Logger.Backends.ConsoleTest do
     assert capture_log(fn ->
       Logger.error("hello")
     end) == IO.ANSI.cyan() <> "hello" <> IO.ANSI.reset()
+  end
+
+  test "can use colors from metadata" do
+    Logger.configure_backend(:console, [format: "$message", colors: [enabled: true]])
+
+    assert capture_log(fn ->
+      Logger.log(:error, "hello", ansi_color: :yellow)
+    end) == IO.ANSI.yellow() <> "hello" <> IO.ANSI.reset()
   end
 end

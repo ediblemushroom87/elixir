@@ -114,7 +114,9 @@ translate_gen(_Meta, Left, Right, T, S) ->
   SF = SL#elixir_scope{extra=S#elixir_scope.extra, extra_guards=nil},
 
   {TT, {TFilters, TS}} = translate_filters(T, SF),
-  Guards = ExtraGuards ++ translate_guards(TLeftGuards) ++ TFilters,
+
+  %% The list of guards is kept in reverse order
+  Guards = TFilters ++ translate_guards(TLeftGuards) ++ ExtraGuards,
   {TLeft, TRight, Guards, TT, TS}.
 
 translate_guards([]) ->
@@ -206,7 +208,8 @@ build_reduce(Clauses, Expr, {bin, _, _} = Into, Acc, S) ->
   build_reduce_clause(Clauses, BinExpr, Into, Acc, S).
 
 build_reduce_clause([{enum, Meta, Left, Right, Filters} | T], Expr, Arg, Acc, S) ->
-  Ann  = ?ann(Meta),
+  Generated = ?generated(Meta),
+  Ann   = ?ann(Meta),
   True  = build_reduce_clause(T, Expr, Acc, Acc, S),
   False = Acc,
 
@@ -214,7 +217,7 @@ build_reduce_clause([{enum, Meta, Left, Right, Filters} | T], Expr, Arg, Acc, S)
     case is_var(Left) of
       true  -> [];
       false ->
-        [{clause, ?generated,
+        [{clause, Generated,
           [{var, Ann, '_'}, Acc], [],
           [False]}]
     end,
@@ -229,6 +232,7 @@ build_reduce_clause([{enum, Meta, Left, Right, Filters} | T], Expr, Arg, Acc, S)
 
 build_reduce_clause([{bin, Meta, Left, Right, Filters} | T], Expr, Arg, Acc, S) ->
   Ann = ?ann(Meta),
+  Generated = ?generated(Meta),
   {Tail, ST} = build_var(Ann, S),
   {Fun, SF}  = build_var(Ann, ST),
 
@@ -249,10 +253,10 @@ build_reduce_clause([{bin, Meta, Left, Right, Filters} | T], Expr, Arg, Acc, S) 
      {clause, ?generated,
       [NoVarMatch, Acc], [],
       [{call, Ann, Fun, [Tail, False]}]},
-     {clause, ?generated,
+     {clause, Generated,
       [{bin, Ann, []}, Acc], [],
       [Acc]},
-     {clause, ?generated,
+     {clause, Generated,
       [Tail, {var, Ann, '_'}], [],
       [elixir_utils:erl_call(Ann, erlang, error, [pair(Ann, badarg, Tail)])]}],
 

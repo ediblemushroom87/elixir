@@ -38,7 +38,7 @@ defmodule Supervisor.Spec do
   Notice in this case we don't have to explicitly import
   `Supervisor.Spec` as `use Supervisor` automatically does so.
   Defining a module-based supervisor can be useful, for example,
-  to perform initialization tasks in the `init/1` callback.
+  to perform initialization tasks in the `c:init/1` callback.
 
   ## Supervisor and worker options
 
@@ -75,13 +75,17 @@ defmodule Supervisor.Spec do
     * `:transient` - the child process is restarted only if it
       terminates abnormally, i.e., with an exit reason other than
       `:normal`, `:shutdown` or `{:shutdown, term}`
+  
+  Notice that supervisor that reached maximum restart intensity will exit with `:shutdown` reason. 
+  In this case the supervisor will only be restarted if its child specification was defined with 
+  the `:restart` option is set to `:permanent` (the default).
 
   ### Shutdown values (:shutdown)
 
   The following shutdown values are supported in the `:shutdown` option:
 
     * `:brutal_kill` - the child process is unconditionally terminated
-      using `exit(child, :kill)`
+      using `Process.exit(child, :kill)`
 
     * `:infinity` - if the child process is a supervisor, this is a mechanism
       to give the subtree enough time to shutdown; it can also be used with
@@ -129,7 +133,7 @@ defmodule Supervisor.Spec do
   supervise and a set of options.
 
   Returns a tuple containing the supervisor specification. This tuple can be
-  used as the return value of the `init/1` callback when implementing a
+  used as the return value of the `c:init/1` callback when implementing a
   module-based supervisor.
 
   ## Examples

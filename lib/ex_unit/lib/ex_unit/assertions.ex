@@ -47,9 +47,9 @@ defmodule ExUnit.Assertions do
 
   In general, a developer will want to use the general
   `assert` macro in tests. This macro introspects your code
-  and provide good reporting whenever there is a failure.
+  and provides good reporting whenever there is a failure.
   For example, `assert some_fun() == 10` will fail (assuming
-  `some_fun()` returns 13):
+  `some_fun()` returns `13`):
 
       Comparison (using ==) failed in:
       code: some_fun() == 10
@@ -65,8 +65,8 @@ defmodule ExUnit.Assertions do
   @doc """
   Asserts its argument is a truthy value.
 
-  `assert` instrospects the underlying expression and provide
-  good  reporting whenever there is a failure. For example,
+  `assert` introspects the underlying expression and provides
+  good reporting whenever there is a failure. For example,
   if the expression uses the comparison operator, the message
   will show the values of the two sides. The assertion
 
@@ -237,36 +237,64 @@ defmodule ExUnit.Assertions do
 
   @operator [:==, :<, :>, :<=, :>=, :===, :=~, :!==, :!=, :in]
 
-  defp translate_assertion({operator, meta, [left, right]} = expr) when operator in @operator  do
-    expr = Macro.escape(expr)
-    call = {operator, meta, [Macro.var(:left, __MODULE__), Macro.var(:right, __MODULE__)]}
-    quote do
-      left  = unquote(left)
-      right = unquote(right)
-      assert unquote(call),
-             left: left,
-             right: right,
-             expr: unquote(expr),
-             message: unquote("Assertion with #{operator} failed")
-    end
+  defp translate_assertion({operator, meta, [_, _]} = expr) when operator in @operator do
+    left = Macro.var(:left, __MODULE__)
+    right = Macro.var(:right, __MODULE__)
+    call = {operator, meta, [left, right]}
+    equality_check? = operator in [:<, :>, :!==, :!=]
+    message = "Assertion with #{operator} failed"
+    translate_assertion(expr, call, message, equality_check?)
   end
 
-  defp translate_assertion({:!, _, [{operator, meta, [left, right]} = expr]}) when operator in @operator do
-    expr = Macro.escape(expr)
-    call = {operator, meta, [Macro.var(:left, __MODULE__), Macro.var(:right, __MODULE__)]}
-    quote do
-      left  = unquote(left)
-      right = unquote(right)
-      assert not(unquote(call)),
-             left: left,
-             right: right,
-             expr: unquote(expr),
-             message: unquote("Refute with #{operator} failed")
-    end
+  defp translate_assertion({:!, _, [{operator, meta, [_, _]} = expr]}) when operator in @operator do
+    left = Macro.var(:left, __MODULE__)
+    right = Macro.var(:right, __MODULE__)
+    call = {:not, meta, [{operator, meta, [left, right]}]}
+    equality_check? = operator in [:<=, :>=, :===, :==, :=~]
+    message = "Refute with #{operator} failed"
+    translate_assertion(expr, call, message, equality_check?)
   end
 
   defp translate_assertion(_expected) do
     nil
+  end
+
+  defp translate_assertion({_, _, [left, right]} = expr, call, message, true) do
+    expr = Macro.escape(expr)
+    quote do
+      left = unquote(left)
+      right = unquote(right)
+      if ExUnit.Assertions.__equal__?(left, right) do
+        assert false,
+          left: left,
+          expr: unquote(expr),
+          message: unquote(message <> ", both sides are exactly equal")
+      else
+        assert unquote(call),
+          left: left,
+          right: right,
+          expr: unquote(expr),
+          message: unquote(message)
+      end
+    end
+  end
+
+  defp translate_assertion({_, _, [left, right]} = expr, call, message, false) do
+    expr = Macro.escape(expr)
+    quote do
+      left = unquote(left)
+      right = unquote(right)
+      assert unquote(call),
+        left: left,
+        right: right,
+        expr: unquote(expr),
+        message: unquote(message)
+    end
+  end
+
+  @doc false
+  def __equal__?(left, right) do
+    left === right
   end
 
   ## END HELPERS
@@ -289,9 +317,10 @@ defmodule ExUnit.Assertions do
   end
 
   @doc """
-  Asserts that a message matching `pattern` was or is going to be received.
+  Asserts that a message matching `pattern` was or is going to be received
+  within the `timeout` period, specified in milliseconds.
 
-  Unlike `assert_received`, it has a default timeout
+  Unlike `assert_received`, it has a default `timeout`
   of 100 milliseconds.
 
   The `pattern` argument must be a match pattern. Flunks with `failure_message`
@@ -374,9 +403,33 @@ defmodule ExUnit.Assertions do
             {received, unquote(vars)}
         after
           timeout ->
-            failure_message = unquote(failure_message) || "No message matching #{unquote(binary)} after #{timeout}ms."
-            flunk(failure_message <> ExUnit.Assertions.__pins__(unquote(pins))
-                          <> ExUnit.Assertions.__mailbox__(self()))
+            {:messages, messages} = Process.info(self(), :messages)
+
+            pattern_finder = fn message ->
+              case message do
+                unquote(pattern) ->
+                  _ = unquote(vars)
+                  true
+                _ ->
+                  false
+              end
+            end
+
+            if Enum.any?(messages, pattern_finder) do
+              flunk(unquote(failure_message) || """
+              Found message matching #{unquote(binary)} after #{timeout}ms.
+
+              This means the message was delivered too close to the timeout value, you may want to either:
+
+                1. Give an increased timeout to `assert_receive/2`
+                2. Increase the default timeout to all `assert_receive` in your
+                   test_helper.exs by setting ExUnit.configure(assert_receive_timeout: ...)
+              """)
+            else
+              failure_message = unquote(failure_message) || "No message matching #{unquote(binary)} after #{timeout}ms."
+              flunk(failure_message <> ExUnit.Assertions.__pins__(unquote(pins))
+                                    <> ExUnit.Assertions.__mailbox__(messages))
+            end
         end
 
       received
@@ -387,8 +440,7 @@ defmodule ExUnit.Assertions do
   @max_mailbox_length 10
 
   @doc false
-  def __mailbox__(pid) do
-    {:messages, messages} = Process.info(pid, :messages)
+  def __mailbox__(messages) do
     length = length(messages)
     mailbox =
       messages
@@ -610,7 +662,7 @@ defmodule ExUnit.Assertions do
 
   @doc """
   Asserts that a message matching `pattern` was not received (and won't be received)
-  within the `timeout` period.
+  within the `timeout` period, specified in milliseconds.
 
   The `pattern` argument must be a match pattern. Flunks with `failure_message`
   if a message matching `pattern` is received.

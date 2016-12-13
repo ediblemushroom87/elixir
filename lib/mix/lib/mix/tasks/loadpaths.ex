@@ -6,14 +6,14 @@ defmodule Mix.Tasks.Loadpaths do
 
   ## Configuration
 
-    * `:elixir` - matches the current elixir version against the
+    * `:elixir` - matches the current Elixir version against the
       given requirement
 
   ## Command line options
 
-    * `--no-archives-check` - do not check archive
-    * `--no-deps-check` - do not check dependencies
-    * `--no-elixir-version-check` - do not check Elixir version
+    * `--no-archives-check` - does not check archive
+    * `--no-deps-check` - does not check dependencies
+    * `--no-elixir-version-check` - does not check Elixir version
 
   """
 

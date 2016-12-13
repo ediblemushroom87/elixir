@@ -13,7 +13,7 @@ defmodule OptionParser do
   end
 
   @doc """
-  Parses `argv` into a keywords list.
+  Parses `argv` into a keyword list.
 
   It returns a three-element tuple with the form `{parsed, args, invalid}`, where:
 
@@ -70,7 +70,7 @@ defmodule OptionParser do
   specifies the type for the value of this switch (see the "Types" section below
   for the possible types and more information about type casting).
 
-  Note that you should only supply the `:switches` or `:strict` option.
+  Note that you should only supply the `:switches` or the`:strict` option.
   If you supply both, an `ArgumentError` exception will be raised.
 
   ### Types
@@ -256,7 +256,7 @@ defmodule OptionParser do
       {:ok, option, value, rest} ->
         # the option exists and it was successfully parsed
         kinds = List.wrap Keyword.get(switches, option)
-        new_opts = do_store_option(opts, option, value, kinds)
+        new_opts = store_option(opts, option, value, kinds)
         do_parse(rest, config, new_opts, args, invalid, all?)
 
       {:invalid, option, value, rest} ->
@@ -335,28 +335,28 @@ defmodule OptionParser do
   end
 
   # Handles -a, -abc, -abc=something
-  defp next(["-" <> option = original | rest] = argv, aliases, switches, strict?) do
+  defp next(["-" <> option | rest] = argv, aliases, switches, strict?) do
     {option, value} = split_option(option)
-    original_option = "-" <> option
+    original = "-" <> option
 
     cond do
-      negative_number?(original) ->
+      is_nil(value) and negative_number?(original) ->
         {:error, argv}
       String.contains?(option, ["-", "_"]) ->
-        {:undefined, original_option, value, rest}
+        {:undefined, original, value, rest}
       String.length(option) > 1 ->
-        opt = get_option(option)
-        alias = aliases[opt]
-        if opt && alias do
-          IO.warn "multi-letter aliases are deprecated, got: #{inspect(opt)}"
-          do_next({:default, alias}, value, original_option, rest, switches, strict?)
+        key = get_option_key(option)
+        option_key = aliases[key]
+        if key && option_key do
+          IO.warn "multi-letter aliases are deprecated, got: #{inspect(key)}"
+          do_next({:default, option_key}, value, original, rest, switches, strict?)
         else
           next(expand_multiletter_alias(option, value) ++ rest, aliases, switches, strict?)
         end
       true ->
         # We have a regular one-letter alias here
-        tagged = tag_single_letter_alias(option, aliases)
-        do_next(tagged, value, original_option, rest, switches, strict?)
+        tagged = tag_oneletter_alias(option, aliases)
+        do_next(tagged, value, original, rest, switches, strict?)
     end
   end
 
@@ -378,30 +378,50 @@ defmodule OptionParser do
   end
 
   @doc """
-  Receives a key-value enumerable and converts it to argv.
+  Receives a key-value enumerable and converts it to `t:argv/0`.
 
   Keys must be atoms. Keys with `nil` value are discarded,
   boolean values are converted to `--key` or `--no-key`
   (if the value is `true` or `false`, respectively),
-  and all other values are converted using `to_string/1`.
+  and all other values are converted using `Kernel.to_string/1`.
+
+  It is advised to pass to `to_argv/2` the same set of `options`
+  given to `parse/2`. Some switches can only be reconstructed
+  correctly with the `switches` information in hand.
 
   ## Examples
 
       iex>  OptionParser.to_argv([foo_bar: "baz"])
       ["--foo-bar", "baz"]
-
       iex>  OptionParser.to_argv([bool: true, bool: false, discarded: nil])
       ["--bool", "--no-bool"]
 
+  Some switches will output different values based on the switches
+  flag:
+
+      iex> OptionParser.to_argv([number: 2], switches: [])
+      ["--number", "2"]
+      iex> OptionParser.to_argv([number: 2], switches: [number: :count])
+      ["--number", "--number"]
+
   """
-  @spec to_argv(Enumerable.t) :: argv
-  def to_argv(enum) do
+  @spec to_argv(Enumerable.t, options) :: argv
+  def to_argv(enum, opts \\ []) do
+    switches = Keyword.get(opts, :switches, [])
     Enum.flat_map(enum, fn
       {_key, nil}  -> []
       {key, true}  -> [to_switch(key)]
       {key, false} -> [to_switch(key, "--no-")]
-      {key, value} -> [to_switch(key), to_string(value)]
+      {key, value} -> to_argv(key, value, switches)
     end)
+  end
+
+  defp to_argv(key, value, switches) do
+    if switches[key] == :count do
+      List.duplicate(to_switch(key), value)
+    else
+      [to_switch(key), to_string(value)]
+    end
   end
 
   defp to_switch(key, prefix \\ "--") when is_atom(key) do
@@ -409,7 +429,7 @@ defmodule OptionParser do
   end
 
   @doc ~S"""
-  Splits a string into argv chunks.
+  Splits a string into `t:argv/0` chunks.
 
   This function splits the given `string` into a list of strings in a similar
   way to many shells.
@@ -473,10 +493,10 @@ defmodule OptionParser do
     {switches, strict?} = cond do
       opts[:switches] && opts[:strict] ->
         raise ArgumentError, ":switches and :strict cannot be given together"
-      s = opts[:switches] ->
-        {s, false}
-      s = opts[:strict] ->
-        {s, true}
+      switches = opts[:switches] ->
+        {switches, false}
+      strict = opts[:strict] ->
+        {strict, true}
       true ->
         {[], false}
     end
@@ -521,7 +541,7 @@ defmodule OptionParser do
     end
   end
 
-  defp do_store_option(dict, option, value, kinds) do
+  defp store_option(dict, option, value, kinds) do
     cond do
       :count in kinds ->
         Keyword.update(dict, option, value, & &1 + 1)
@@ -534,35 +554,38 @@ defmodule OptionParser do
 
   defp tag_option("no-" <> option = original, switches) do
     cond do
-      (negated = get_option(option)) && :boolean in List.wrap(switches[negated]) ->
+      (negated = get_option_key(option)) && :boolean in List.wrap(switches[negated]) ->
         {:negated, negated}
-      option = get_option(original) ->
-        {:default, option}
+      option_key = get_option_key(original) ->
+        {:default, option_key}
       true ->
         :unknown
     end
   end
 
   defp tag_option(option, _switches) do
-    if option = get_option(option) do
-      {:default, option}
+    if option_key = get_option_key(option) do
+      {:default, option_key}
     else
       :unknown
     end
   end
 
-  defp tag_single_letter_alias(alias, aliases) when is_binary(alias) do
-    if alias = aliases[String.to_atom(alias)] do
-      {:default, alias}
+  defp tag_oneletter_alias(alias, aliases) when is_binary(alias) do
+    if option_key = aliases[to_existing_key(alias)] do
+      {:default, option_key}
     else
       :unknown
     end
   end
 
   defp expand_multiletter_alias(letters, value) when is_binary(letters) do
-    expanded = letters |> String.codepoints() |> Enum.map(&("-" <> &1))
-    last = List.last(expanded) <> if(value, do: "=" <> value, else: "")
-    Enum.drop(expanded, -1) ++ [last]
+    {last, expanded} =
+      letters
+      |> String.codepoints()
+      |> Enum.map(&("-" <> &1))
+      |> List.pop_at(-1)
+    expanded ++ [last <> if(value, do: "=" <> value, else: "")]
   end
 
   defp option_defined?(:unknown, _switches) do
@@ -639,9 +662,17 @@ defmodule OptionParser do
   defp to_underscore(<<>>, acc),
     do: acc
 
-  defp get_option(option) do
-    if str = to_underscore(option) do
-      String.to_atom(str)
+  def get_option_key(option) do
+    if string = to_underscore(option) do
+      to_existing_key(string)
+    end
+  end
+
+  defp to_existing_key(option) do
+    try do
+      String.to_existing_atom(option)
+    rescue
+      ArgumentError -> nil
     end
   end
 
@@ -649,34 +680,34 @@ defmodule OptionParser do
     match?({_, ""}, Float.parse(arg))
   end
 
-  defp format_errors(errors, opts) do
+  defp format_errors([_ | _] = errors, opts) do
     types = opts[:switches] || opts[:strict]
-    info  = Enum.map(errors, &format_error(&1, opts, types))
-    total = length(errors)
-    error = if total == 1, do: "error", else: "errors"
-    "#{total} #{error} found!#{info}"
+    error_count = length(errors)
+    error = if error_count == 1, do: "error", else: "errors"
+    "#{error_count} #{error} found!\n" <>
+      Enum.map_join(errors, "\n", &format_error(&1, opts, types))
   end
 
   defp format_error({option, nil}, opts, types) do
     if type = get_type(option, opts, types) do
-      "\n#{option} : Missing argument of type #{type}"
+      "#{option} : Missing argument of type #{type}"
     else
-      "\n#{option} : Unknown option"
+      "#{option} : Unknown option"
     end
   end
 
   defp format_error({option, value}, opts, types) do
     type = get_type(option, opts, types)
-    "\n#{option} : Expected type #{type}, got #{inspect value}"
+    "#{option} : Expected type #{type}, got #{inspect value}"
   end
 
   defp get_type(option, opts, types) do
-    option_key = option |> String.trim_leading("-") |> get_option()
+    key = option |> String.trim_leading("-") |> get_option_key()
 
-    if option_alias = opts[:aliases][option_key] do
-      types[option_alias]
-    else
+    if option_key = opts[:aliases][key] do
       types[option_key]
+    else
+      types[key]
     end
   end
 end

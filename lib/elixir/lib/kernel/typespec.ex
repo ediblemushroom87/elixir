@@ -108,6 +108,7 @@ defmodule Kernel.Typespec do
   @doc """
   Defines a `spec` by receiving a typespec expression.
   """
+  @spec define_spec(atom, Macro.t, Macro.Env.t) :: Keyword.t
   def define_spec(kind, expr, env) do
     defspec(kind, expr, env)
   end
@@ -117,7 +118,9 @@ defmodule Kernel.Typespec do
   (private, opaque or not). This function is only available
   for modules being compiled.
   """
-  def defines_type?(module, name, arity) do
+  @spec defines_type?(module, atom, arity) :: boolean
+  def defines_type?(module, name, arity)
+      when is_atom(module) and is_atom(name) and arity in 0..255 do
     finder = fn {_kind, expr, _caller} ->
       type_to_signature(expr) == {name, arity}
     end
@@ -129,7 +132,9 @@ defmodule Kernel.Typespec do
   Returns `true` if the current module defines a given spec.
   This function is only available for modules being compiled.
   """
-  def defines_spec?(module, name, arity) do
+  @spec defines_spec?(module, atom, arity) :: boolean
+  def defines_spec?(module, name, arity)
+      when is_atom(module) and is_atom(name) and arity in 0..255 do
     finder = fn {_kind, expr, _caller} ->
       spec_to_signature(expr) == {name, arity}
     end
@@ -140,7 +145,9 @@ defmodule Kernel.Typespec do
   Returns `true` if the current module defines a callback.
   This function is only available for modules being compiled.
   """
-  def defines_callback?(module, name, arity) do
+  @spec defines_callback?(module, atom, arity) :: boolean
+  def defines_callback?(module, name, arity)
+      when is_atom(module) and is_atom(name) and arity in 0..255 do
     finder = fn {_kind, expr, _caller} ->
       spec_to_signature(expr) == {name, arity}
     end
@@ -150,8 +157,10 @@ defmodule Kernel.Typespec do
   @doc """
   Converts a spec clause back to Elixir AST.
   """
+  @spec spec_to_ast(atom, tuple) :: {atom, Keyword.t, [Macro.t]}
   def spec_to_ast(name, spec)
-  def spec_to_ast(name, {:type, line, :fun, [{:type, _, :product, args}, result]}) do
+  def spec_to_ast(name, {:type, line, :fun, [{:type, _, :product, args}, result]})
+      when is_atom(name) do
     meta = [line: line]
     body = {name, meta, Enum.map(args, &typespec_to_ast/1)}
 
@@ -169,11 +178,12 @@ defmodule Kernel.Typespec do
     end
   end
 
-  def spec_to_ast(name, {:type, line, :fun, []}) do
+  def spec_to_ast(name, {:type, line, :fun, []}) when is_atom(name) do
     {:::, [line: line], [{name, [line: line], []}, quote(do: term)]}
   end
 
-  def spec_to_ast(name, {:type, line, :bounded_fun, [{:type, _, :fun, [{:type, _, :product, args}, result]}, constraints]}) do
+  def spec_to_ast(name, {:type, line, :bounded_fun, [{:type, _, :fun, [{:type, _, :product, args}, result]}, constraints]})
+      when is_atom(name) do
     guards =
       for {:type, _, :constraint, [{:atom, _, :is_subtype}, [{:var, _, var}, type]]} <- constraints do
         {var, typespec_to_ast(type)}
@@ -206,7 +216,7 @@ defmodule Kernel.Typespec do
     quote do: unquote(record)(unquote_splicing(args)) :: unquote(type)
   end
 
-  def type_to_ast({name, type, args}) do
+  def type_to_ast({name, type, args}) when is_atom(name) do
     args = for arg <- args, do: typespec_to_ast(arg)
     quote do: unquote(name)(unquote_splicing(args)) :: unquote(typespec_to_ast(type))
   end
@@ -348,7 +358,7 @@ defmodule Kernel.Typespec do
 
   defp get_doc_info(table, attr, caller) do
     case :ets.take(table, attr) do
-      [{^attr, {line, doc}}] -> {line, doc}
+      [{^attr, {line, doc}, _, _}] -> {line, doc}
       [] -> {caller.line, nil}
     end
   end
@@ -415,7 +425,7 @@ defmodule Kernel.Typespec do
   defp elixir_builtin_type?(:as_boolean, 1), do: true
   defp elixir_builtin_type?(:struct, 0), do: true
   defp elixir_builtin_type?(:charlist, 0), do: true
-  # TODO: Deprecate char_list type by v1.5
+  # TODO: Remove char_list type by 2.0
   defp elixir_builtin_type?(:char_list, 0), do: true
   defp elixir_builtin_type?(:keyword, 0), do: true
   defp elixir_builtin_type?(:keyword, 1), do: true
@@ -578,7 +588,7 @@ defmodule Kernel.Typespec do
   defp typespec_to_ast({:type, line, :map, fields}) do
     fields = Enum.map fields, fn
       {:type, _, :map_field_assoc, :any} ->
-        {:..., [line: line], nil}
+        {{:optional, [], [{:any, [], []}]}, {:any, [], []}}
       {:type, _, :map_field_exact, [{:atom, _, k}, v]} ->
         {k, typespec_to_ast(v)}
       {:type, _, :map_field_exact, [k, v]} ->
@@ -649,7 +659,7 @@ defmodule Kernel.Typespec do
   end
 
   # Special shortcut(s)
-  # TODO: Deprecate char_list type by v1.5
+  # TODO: Remove char_list type by 2.0
   defp typespec_to_ast({:remote_type, line, [{:atom, _, :elixir}, {:atom, _, type}, []]})
       when type in [:charlist, :char_list] do
     typespec_to_ast({:type, line, :charlist, []})
@@ -750,8 +760,6 @@ defmodule Kernel.Typespec do
   defp typespec({:%{}, meta, fields} = map, vars, caller) do
     fields =
       :lists.map(fn
-        :... ->
-          {:type, line(meta), :map_field_assoc, :any}
         {k, v} when is_atom(k) ->
           {:type, line(meta), :map_field_exact, [typespec(k, vars, caller), typespec(v, vars, caller)]}
         {{:required, meta2, [k]}, v} ->
@@ -889,7 +897,7 @@ defmodule Kernel.Typespec do
   defp typespec({{:., meta, [remote, name]}, _, args} = orig, vars, caller) do
     # We set a function name to avoid tracking
     # aliases in typespecs as compile time dependencies.
-    remote = Macro.expand remote, %{caller | function: {:typespec, 0}}
+    remote = Macro.expand(remote, %{caller | function: {:typespec, 0}})
     unless is_atom(remote) do
       compile_error(caller, "invalid remote in typespec: #{Macro.to_string(orig)}")
     end
@@ -932,8 +940,11 @@ defmodule Kernel.Typespec do
     {:type, line(meta), type, arguments}
   end
 
-  # TODO: Deprecate char_list type by v1.5
+  # TODO: Remove char_list type by 2.0
   defp typespec({type, _meta, []}, vars, caller) when type in [:charlist, :char_list] do
+    if type == :char_list do
+      :elixir_errors.warn caller.line, caller.file, "the char_list() type is deprecated, use charlist()"
+    end
     typespec((quote do: :elixir.charlist()), vars, caller)
   end
 

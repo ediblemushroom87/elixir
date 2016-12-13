@@ -1,29 +1,32 @@
 defmodule Logger.Backends.Console do
   @moduledoc false
 
-  use GenEvent
+  @behaviour :gen_event
 
   defstruct [format: nil, metadata: nil, level: nil, colors: nil, device: nil,
              max_buffer: nil, buffer_size: 0, buffer: [], ref: nil, output: nil]
 
   def init(:console) do
-    if Process.whereis(:user) do
-      init({:user, []})
+    config = Application.get_env(:logger, :console)
+    device = Keyword.get(config, :device, :user)
+
+    if Process.whereis(device) do
+      {:ok, init(config, %__MODULE__{})}
     else
       {:error, :ignore}
     end
   end
 
-  def init({device, opts}) do
-    {:ok, configure(device, opts, %__MODULE__{})}
+  def init({__MODULE__, opts}) when is_list(opts) do
+    config = configure_merge(Application.get_env(:logger, :console), opts)
+    {:ok, init(config, %__MODULE__{})}
   end
 
   def handle_call({:configure, options}, state) do
-    {:ok, :ok, configure(state.device, options, state)}
+    {:ok, :ok, configure(options, state)}
   end
 
-  def handle_event({_level, gl, _event}, state)
-  when node(gl) != node() do
+  def handle_event({_level, gl, _event}, state) when node(gl) != node() do
     {:ok, state}
   end
 
@@ -63,6 +66,14 @@ defmodule Logger.Backends.Console do
     {:ok, state}
   end
 
+  def code_change(_old_vsn, state, _extra) do
+    {:ok, state}
+  end
+
+  def terminate(_reason, _state) do
+    :ok
+  end
+
   ## Helpers
 
   defp meet_level?(_lvl, nil), do: true
@@ -71,22 +82,22 @@ defmodule Logger.Backends.Console do
     Logger.compare_levels(lvl, min) != :lt
   end
 
-  defp configure(device, options, state) do
-    config =
-      Application.get_env(:logger, :console, [])
-      |> configure_merge(options)
+  defp configure(options, state) do
+    config = configure_merge(Application.get_env(:logger, :console), options)
+    Application.put_env(:logger, :console, config)
+    init(config, state)
+  end
 
-    if device === :user do
-      Application.put_env(:logger, :console, config)
-    end
-
-    format     = Logger.Formatter.compile Keyword.get(config, :format)
-    level      = Keyword.get(config, :level)
-    metadata   = Keyword.get(config, :metadata, [])
-    colors     = configure_colors(config)
+  defp init(config, state) do
+    level = Keyword.get(config, :level)
+    device = Keyword.get(config, :device, :user)
+    format = Logger.Formatter.compile Keyword.get(config, :format)
+    colors = configure_colors(config)
+    metadata = Keyword.get(config, :metadata, [])
     max_buffer = Keyword.get(config, :max_buffer, 32)
+
     %{state | format: format, metadata: Enum.reverse(metadata),
-      level: level, colors: colors, device: device, max_buffer: max_buffer}
+              level: level, colors: colors, device: device, max_buffer: max_buffer}
   end
 
   defp configure_merge(env, options) do
@@ -116,12 +127,12 @@ defmodule Logger.Backends.Console do
     %{state | buffer: buffer, buffer_size: buffer_size + 1}
   end
 
-  defp async_io(:user, output) do
-    case Process.whereis(:user) do
+  defp async_io(name, output) when is_atom(name) do
+    case Process.whereis(name) do
       device when is_pid(device) ->
         async_io(device, output)
       nil ->
-        raise "no device registered with the name :user"
+        raise "no device registered with the name #{inspect name}"
     end
   end
 
@@ -149,7 +160,7 @@ defmodule Logger.Backends.Console do
     %{format: format, metadata: keys, colors: colors} = state
     format
     |> Logger.Formatter.format(level, msg, ts, take_metadata(md, keys))
-    |> color_event(level, colors)
+    |> color_event(level, colors, md)
   end
 
   defp take_metadata(metadata, keys) do
@@ -161,10 +172,11 @@ defmodule Logger.Backends.Console do
     end
   end
 
-  defp color_event(data, _level, %{enabled: false}), do: data
+  defp color_event(data, _level, %{enabled: false}, _md), do: data
 
-  defp color_event(data, level, %{enabled: true} = colors) do
-    [IO.ANSI.format_fragment(Map.fetch!(colors, level), true), data | IO.ANSI.reset]
+  defp color_event(data, level, %{enabled: true} = colors, md) do
+    color = md[:ansi_color] || Map.fetch!(colors, level)
+    [IO.ANSI.format_fragment(color, true), data | IO.ANSI.reset]
   end
 
   defp log_buffer(%{buffer_size: 0, buffer: []} = state), do: state

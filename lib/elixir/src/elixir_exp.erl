@@ -116,7 +116,7 @@ expand({import, Meta, [Ref, KV]}, E) ->
         ['Elixir.Macro':to_string(Ref)])
   end;
 
-%% Pseudo vars
+%% Compilation environment macros
 
 expand({'__MODULE__', _, Atom}, E) when is_atom(Atom) ->
   {?m(E, module), E};
@@ -165,7 +165,7 @@ expand({quote, Meta, [KV, Do]}, E) when is_list(Do) ->
       Ctx;
     {context, Ctx} ->
       compile_error(Meta, ?m(E, file), "invalid :context for quote, "
-        "expected non nil compile time atom or alias, got: ~ts", ['Elixir.Kernel':inspect(Ctx)]);
+        "expected non-nil compile time atom or alias, got: ~ts", ['Elixir.Kernel':inspect(Ctx)]);
     false ->
       case ?m(E, module) of
         nil -> 'Elixir';
@@ -328,6 +328,18 @@ expand({Atom, Meta, Args}, E) when is_atom(Atom), is_list(Meta), is_list(Args) -
 
 %% Remote calls
 
+expand({{'.', Meta, [erlang, 'orelse']}, _, [Left, Right]}, #{context := nil} = Env) ->
+  Generated = ?generated(Meta),
+  TrueClause = {'->', Generated, [[true], true]},
+  FalseClause = {'->', Generated, [[false], Right]},
+  expand_boolean_check('or', Left, TrueClause, FalseClause, Meta, Env);
+
+expand({{'.', Meta, [erlang, 'andalso']}, _, [Left, Right]}, #{context := nil} = Env) ->
+  Generated = ?generated(Meta),
+  TrueClause = {'->', Generated, [[true], Right]},
+  FalseClause = {'->', Generated, [[false], false]},
+  expand_boolean_check('and', Left, TrueClause, FalseClause, Meta, Env);
+
 expand({{'.', DotMeta, [Left, Right]}, Meta, Args}, E)
     when (is_tuple(Left) orelse is_atom(Left)), is_atom(Right), is_list(Meta), is_list(Args) ->
   {ELeft, EL} = expand(Left, E),
@@ -389,6 +401,20 @@ expand(Other, E) ->
     "invalid quoted expression: ~ts", ['Elixir.Kernel':inspect(Other)]).
 
 %% Helpers
+
+expand_boolean_check(Op, Expr, TrueClause, FalseClause, Meta, Env) ->
+  {EExpr, EnvExpr} = expand(Expr, Env),
+  Clauses =
+    case elixir_utils:returns_boolean(EExpr) of
+      true ->
+        [TrueClause, FalseClause];
+      false ->
+        Other = {other, Meta, ?MODULE},
+        OtherExpr = {{'.', Meta, [erlang, error]}, Meta, [{'{}', [], [badbool, Op, Other]}]},
+        [TrueClause, FalseClause, {'->', ?generated(Meta), [[Other], OtherExpr]}]
+    end,
+  {EClauses, EnvCase} = elixir_exp_clauses:'case'(Meta, [{do, Clauses}], EnvExpr),
+  {{'case', Meta, [EExpr, EClauses]}, EnvCase}.
 
 expand_multi_alias_call(Kind, Meta, Base, Refs, Opts, E) ->
   {BaseRef, EB} = expand_without_aliases_report(Base, E),

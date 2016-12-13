@@ -138,7 +138,11 @@ defmodule Mix.Utils do
 
   def extract_files(paths, pattern) do
     Enum.flat_map(paths, fn path ->
-      if File.regular?(path), do: [path], else: Path.wildcard("#{path}/**/#{pattern}")
+      case :elixir_utils.read_file_type(path) do
+        {:ok, :directory} -> Path.wildcard("#{path}/**/#{pattern}")
+        {:ok, :regular} -> [path]
+        _ -> []
+      end
     end) |> Enum.uniq
   end
 
@@ -316,7 +320,9 @@ defmodule Mix.Utils do
         {:error, :enoent} ->
           do_symlink_or_copy(source, target, link)
         {:error, _} ->
-          _ = File.rm_rf!(target)
+          unless File.dir?(target) do
+            File.rm_rf!(target)
+          end
           do_symlink_or_copy(source, target, link)
       end
     else
@@ -326,8 +332,12 @@ defmodule Mix.Utils do
 
   defp do_symlink_or_copy(source, target, link) do
     case :file.make_symlink(link, target) do
-      :ok -> :ok
-      {:error, _} -> {:ok, File.cp_r!(source, target)}
+      :ok ->
+        :ok
+      {:error, _} ->
+        {:ok, File.cp_r!(source, target, fn(orig, dest) ->
+          File.stat!(orig).mtime > File.stat!(dest).mtime
+        end)}
     end
   end
 

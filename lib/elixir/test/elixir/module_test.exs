@@ -58,28 +58,35 @@ defmodule ModuleTest do
     end
   end
 
-  test "in memory" do
+  test "module attributes returns value" do
+    in_module do
+      assert (@return [:foo, :bar]) == :ok
+      _ = @return
+    end
+  end
+
+  test "in memory modules are tagged as so" do
     assert :code.which(__MODULE__) == :in_memory
   end
 
   ## Eval
 
-  test "eval quoted" do
+  test "executes eval_quoted definitions" do
     assert eval_quoted_info() == {ModuleTest, "sample.ex", 13}
   end
 
-  test "line from macro" do
+  test "retrieves line from macros" do
     assert ModuleTest.ToUse.line == 36
   end
 
   ## Callbacks
 
-  test "compile callback hook" do
+  test "executes custom before_compile callback" do
     assert ModuleTest.ToUse.callback_value(true) == true
     assert ModuleTest.ToUse.callback_value(false) == false
   end
 
-  test "before compile callback hook" do
+  test "executes default before_compile callback" do
     assert ModuleTest.ToUse.before_compile == []
   end
 
@@ -93,7 +100,7 @@ defmodule ModuleTest do
     assert {:+, _, [{:foo, _, nil}, {:bar, _, nil}]} = expr
   end
 
-  test "on definition" do
+  test "executes on definition callback" do
     defmodule OnDefinition do
       @on_definition ModuleTest
 
@@ -112,7 +119,7 @@ defmodule ModuleTest do
     end
   end
 
-  test "overridable inside before compile" do
+  test "may set overridable inside before_compile callback" do
     defmodule OverridableWithBeforeCompile do
       @before_compile ModuleTest
     end
@@ -130,12 +137,12 @@ defmodule ModuleTest do
       Enum.filter __MODULE__.__info__(:attributes), &match?({:register_example, _}, &1)
   end
 
-  @some_attribute  [1]
+  @some_attribute [1]
   @other_attribute [3, 2, 1]
 
   test "inside function attributes" do
-    assert [1] = @some_attribute
-    assert [3, 2, 1] = @other_attribute
+    assert @some_attribute == [1]
+    assert @other_attribute == [3, 2, 1]
   end
 
   test "@compile autoload attribute" do
@@ -221,7 +228,7 @@ defmodule ModuleTest do
     assert ModuleCreateSample.world
   end
 
-  test "create with elixir as a name" do
+  test "create with Elixir as a name" do
     contents =
       quote do
         def world, do: true

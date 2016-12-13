@@ -21,13 +21,13 @@ defmodule Mix.Tasks.Help do
   application either inside your project (in `config/config.exs`) or
   by using the local config (in `~/.mix/config.exs`).
 
-  For example, to disable, one may:
+  For example, to disable color, one may use the configuration:
 
       [mix: [colors: [enabled: false]]]
 
   The available color options are:
 
-    * `:enabled`         - shows ANSI formatting (defaults to `IO.ANSI.enabled?`)
+    * `:enabled`         - shows ANSI formatting (defaults to `IO.ANSI.enabled?/0`)
     * `:doc_code`        - the attributes for code blocks (cyan, bright)
     * `:doc_inline_code` - inline code (cyan)
     * `:doc_headings`    - h1 and h2 (yellow, bright)

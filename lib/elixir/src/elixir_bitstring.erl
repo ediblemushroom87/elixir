@@ -21,9 +21,9 @@ expand_bitstr(Fun, [{'::', Meta, [Left, Right]} | T], Acc, E) ->
 
   %% Variables defined outside the binary can be accounted
   %% on subparts, however we can't assign new variables.
-  case E of
-    {ER, _} -> ok;               %% expand_arg,  no assigns
-    _ -> ER = E#{context := nil} %% expand_each, revert assigns
+  ER = case E of
+    {EExtracted, _} -> EExtracted;        %% expand_arg,  no assigns
+    _               -> E#{context := nil} %% expand_each, revert assigns
   end,
 
   ERight = expand_bit_info(Meta, Right, ER),
@@ -192,6 +192,8 @@ build_bitstr_each(Fun, T, Meta, S, Acc, H, Size, Types) ->
   case Expr of
     {bin, _, Elements} when Splice, Size == default, S#elixir_scope.context == match ->
       build_bitstr_each(Fun, T, Meta, NS, lists:reverse(Elements, Acc));
+    {bin, _, _} when Types == default ->
+      build_bitstr_each(Fun, T, Meta, NS, [{bin_element, ?ann(Meta), Expr, Size, [bitstring]} | Acc]);
     _ ->
       build_bitstr_each(Fun, T, Meta, NS, [{bin_element, ?ann(Meta), Expr, Size, Types} | Acc])
   end.

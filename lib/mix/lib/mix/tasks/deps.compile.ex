@@ -15,7 +15,7 @@ defmodule Mix.Tasks.Deps.Compile do
     * `mix.exs`      - invokes `mix compile`
     * `rebar.config` - invokes `rebar compile`
     * `Makefile.win` - invokes `nmake /F Makefile.win` (only on Windows)
-    * `Makefile`     - invokes `make` (except on Windows)
+    * `Makefile`     - invokes `gmake` on FreeBSD and OpenBSD, invokes `make` on any other OS (except on Windows)
 
   The compilation can be customized by passing a `compile` option
   in the dependency:
@@ -163,8 +163,14 @@ defmodule Mix.Tasks.Deps.Compile do
     cmd = "#{rebar_cmd(dep)} bare compile --paths #{inspect lib_path}"
 
     File.mkdir_p!(dep_path)
-    File.write!(config_path, Mix.Rebar.serialize_config(dep.extra))
+    File.write!(config_path, rebar_config(dep))
     do_command dep, config, cmd, false, env
+  end
+
+  defp rebar_config(dep) do
+    dep.extra
+    |> Mix.Rebar.dependency_config
+    |> Mix.Rebar.serialize_config
   end
 
   defp rebar_cmd(%Mix.Dep{manager: manager} = dep) do
@@ -186,11 +192,16 @@ defmodule Mix.Tasks.Deps.Compile do
   end
 
   defp do_make(%{opts: opts} = dep, config) do
+    os_type = :os.type
+
     command =
-      if match?({:win32, _}, :os.type) and File.regular?(Path.join(opts[:dest], "Makefile.win")) do
-        "nmake /F Makefile.win"
-      else
-        "make"
+      cond do
+        match?({:win32, _}, os_type) and File.regular?(Path.join(opts[:dest], "Makefile.win")) ->
+          "nmake /F Makefile.win"
+        match?({:unix, type} when type in [:freebsd, :openbsd], os_type) ->
+          "gmake"
+        true ->
+          "make"
       end
     do_command(dep, config, command, true, [{"IS_DEP", "1"}])
   end
