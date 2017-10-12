@@ -3,74 +3,17 @@
 -export([
   setup/1, cleanup/1, cache_env/1, get_cached_env/1,
   record_local/2, record_local/3, record_import/4,
-  record_definition/3, record_defaults/4,
-  ensure_no_import_conflict/4, warn_unused_local/3, format_error/1
+  record_definition/3, record_defaults/4, reattach/5,
+  ensure_no_import_conflict/3, warn_unused_local/3, format_error/1
 ]).
--export([macro_for/3, local_for/3, local_for/4]).
 
 -include("elixir.hrl").
 -define(attr, {elixir, locals_tracker}).
+-define(cache, {elixir, cache_env}).
 -define(tracker, 'Elixir.Module.LocalsTracker').
 
-macro_for(Module, Name, Arity) ->
-  Tuple = {Name, Arity},
-  try elixir_def:lookup_clauses(Module, Tuple) of
-    {Kind, Ann, [_ | _] = Clauses} when Kind == defmacro; Kind == defmacrop ->
-      fun() -> get_function(Ann, Module, Clauses) end;
-    _ ->
-      false
-  catch
-    error:badarg -> false
-  end.
-
-local_for(Module, Name, Arity) ->
-  local_for(Module, Name, Arity, nil).
-local_for(Module, Name, Arity, Given) ->
-  Tuple = {Name, Arity},
-  case elixir_def:lookup_clauses(Module, Tuple) of
-    {Kind, Ann, [_ | _] = Clauses} when Given == nil; Kind == Given ->
-      get_function(Ann, Module, Clauses);
-    _ ->
-      {current_stacktrace, [_ | T]} = erlang:process_info(self(), current_stacktrace),
-      erlang:raise(error, undef, [{Module, Name, Arity, []} | T])
-  end.
-
-get_function(Ann, Module, Clauses) ->
-  RewrittenClauses = [rewrite_clause(Clause, Module) || Clause <- Clauses],
-  Fun = {'fun', Ann, {clauses, RewrittenClauses}},
-  {value, Result, _Binding} = erl_eval:exprs([Fun], []),
-  Result.
-
-rewrite_clause({call, Ann1, {atom, Ann2, RawName}, Args}, Module) ->
-  Remote = {remote, Ann1,
-    {atom, Ann2, ?MODULE},
-    {atom, Ann2, local_for}
- },
-
-  %% If we have a macro, its arity in the table is
-  %% actually one less than in the function call
-  {Name, Arity} = case atom_to_list(RawName) of
-    "MACRO-" ++ Rest -> {list_to_atom(Rest), length(Args) - 1};
-    _ -> {RawName, length(Args)}
-  end,
-
-  FunCall = {call, Ann1, Remote, [
-    {atom, Ann2, Module}, {atom, Ann2, Name}, {integer, Ann2, Arity}
-  ]},
-  {call, Ann1, FunCall, rewrite_clause(Args, Module)};
-
-rewrite_clause(Tuple, Module) when is_tuple(Tuple) ->
-  list_to_tuple(rewrite_clause(tuple_to_list(Tuple), Module));
-
-rewrite_clause(List, Module) when is_list(List) ->
-  [rewrite_clause(Item, Module) || Item <- List];
-
-rewrite_clause(Else, _) -> Else.
-
-%% TRACKING
-
 setup(Module) ->
-  case elixir_compiler:get_opt(internal) of
+  case elixir_config:get(bootstrap) of
     false ->
       {ok, Pid} = ?tracker:start_link(),
       ets:insert(elixir_module:data_table(Module), {?attr, Pid}),
@@ -81,6 +24,9 @@ setup(Module) ->
 
 cleanup(Module) ->
   if_tracker(Module, fun(Pid) -> unlink(Pid), ?tracker:stop(Pid), ok end).
+
+reattach(Tuple, Kind, Module, Function, Neighbours) ->
+  if_tracker(Module, fun(Pid) -> ?tracker:reattach(Pid, Tuple, Kind, Function, Neighbours) end).
 
 record_local(Tuple, Module) when is_atom(Module) ->
   if_tracker(Module, fun(Pid) -> ?tracker:add_local(Pid, Tuple), ok end).
@@ -114,44 +60,43 @@ if_tracker(Module, Default, Callback) ->
 
 %% CACHING
 
-cache_env(#{module := Module} = RE) ->
-  E = RE#{line := nil, vars := []},
-  try ets:lookup_element(elixir_module:data_table(Module), ?attr, 2) of
-    Pid ->
-      {Pid, ?tracker:cache_env(Pid, E)}
-  catch
-    error:badarg ->
-      {Escaped, _} = elixir_quote:escape(E, false),
-      Escaped
-  end.
+cache_env(#{line := Line, module := Module} = E) ->
+  Table = elixir_module:data_table(Module),
+  Cache = E#{line := nil, vars := []},
 
-get_cached_env({Pid, Ref}) -> ?tracker:get_cached_env(Pid, Ref);
-get_cached_env(Env) -> Env.
+  Pos =
+    case ets:lookup(Table, ?cache) of
+      [{_, Key, Cache}] ->
+        Key;
+      [{_, PrevKey, _}] ->
+        Key = PrevKey + 1,
+        ets:insert(Table, {{cache_env, Key}, Cache}),
+        ets:insert(Table, {?cache, Key, Cache}),
+        Key
+    end,
+
+  {Module, {Line, Pos}}.
+
+get_cached_env({Module, {Line, Pos}}) ->
+  (ets:lookup_element(elixir_module:data_table(Module), {cache_env, Pos}, 2))#{line := Line};
+get_cached_env(Env) ->
+  Env.
 
 %% ERROR HANDLING
 
-ensure_no_import_conflict(_Line, _File, 'Elixir.Kernel', _All) ->
+ensure_no_import_conflict(_File, 'Elixir.Kernel', _All) ->
   ok;
-ensure_no_import_conflict(Line, File, Module, All) ->
+ensure_no_import_conflict(File, Module, All) ->
   if_tracker(Module, ok, fun(Pid) ->
-    _ = [ begin
-        elixir_errors:form_error([{line, Line}], File, ?MODULE, {function_conflict, Error})
-      end || Error <- ?tracker:collect_imports_conflicts(Pid, All) ],
+    [elixir_errors:form_error(Meta, File, ?MODULE, {function_conflict, Error})
+     || {Meta, Error} <- ?tracker:collect_imports_conflicts(Pid, All)],
     ok
   end).
 
 warn_unused_local(File, Module, Private) ->
   if_tracker(Module, [], fun(Pid) ->
-    Args = [{Fun, Kind, Defaults} ||
-            {Fun, Kind, _Line, true, Defaults} <- Private],
-
-    {Unreachable, Warnings} = ?tracker:collect_unused_locals(Pid, Args),
-
-    [begin
-      {_, _, Line, _, _} = lists:keyfind(element(2, Error), 1, Private),
-      elixir_errors:form_warn([{line, Line}], File, ?MODULE, Error)
-     end || Error <- Warnings ],
-
+    {Unreachable, Warnings} = ?tracker:collect_unused_locals(Pid, Private),
+    [elixir_errors:form_warn(Meta, File, ?MODULE, Error) || {Meta, Error} <- Warnings],
     Unreachable
   end).
 

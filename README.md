@@ -1,7 +1,11 @@
 ![Elixir](https://github.com/elixir-lang/elixir-lang.github.com/raw/master/images/logo/logo.png)
 =========
-[![Build Status](https://secure.travis-ci.org/elixir-lang/elixir.svg?branch=master
+[![Travis build](https://secure.travis-ci.org/elixir-lang/elixir.svg?branch=master
 "Build Status")](https://travis-ci.org/elixir-lang/elixir)
+[![Windows build](https://ci.appveyor.com/api/projects/status/macwuxq7aiiv61g1?svg=true)](https://ci.appveyor.com/project/josevalim/elixir)
+
+
+Elixir is a dynamic, functional language designed for building scalable and maintainable applications.
 
 For more about Elixir, installation and documentation,
 [check Elixir's website](http://elixir-lang.org/).
@@ -62,7 +66,9 @@ code is divided in applications inside the `lib` folder:
 
 You can run all tests in the root directory with `make test` and you can
 also run tests for a specific framework `make test_#{NAME}`, for example,
-`make test_ex_unit`.
+`make test_ex_unit`. If you just changed something in the Elixir's standard
+library, you can run only that portion through `make test_stdlib`, as
+`test_elixir` also runs tests for the other projects (EEx, ExUnit, etc.).
 
 In case you are changing a single file, you can compile and run tests only
 for that particular file for fast development cycles. For example, if you
@@ -72,6 +78,28 @@ are changing the String module, you can compile it and run its tests as:
 bin/elixirc lib/elixir/lib/string.ex -o lib/elixir/ebin
 bin/elixir lib/elixir/test/elixir/string_test.exs
 ```
+
+To recompile (including Erlang modules):
+
+```sh
+make compile
+```
+
+If your contribution fails the build during the bootstrapping of the language,
+you can reproduce it locally by deleting all of Elixir beam files and compiling
+again:
+
+```sh
+make clean_elixir compile
+```
+
+Or to rebuild everything from scratch without running tests:
+
+```sh
+make clean compile
+```
+
+More tasks can be found by reading the [Makefile](./Makefile).
 
 After your changes are done, please remember to run the full suite with
 `make test`.
@@ -102,8 +130,14 @@ Once a pull request is sent, the Elixir team will review your changes.
 We outline our process below to clarify the roles of everyone involved.
 
 All pull requests must be approved by two committers before being merged into
-the repository. In case any changes are necessary, the team will leave
-appropriate comments requesting changes to the code.
+the repository. If any changes are necessary, the team will leave appropriate
+comments requesting changes to the code. Unfortunately we cannot guarantee a
+pull request will be merged, even when modifications are requested, as the Elixir
+team will re-evaluate the contribution as it changes.
+
+Committers may also push style changes directly to your branch. If you would
+rather manage all changes yourself, you can disable "Allow edits from maintainers"
+feature when submitting your pull request.
 
 The Elixir team may optionally assign someone to review a pull request.
 In case someone is assigned, they must explicitly approve the code before
@@ -126,7 +160,7 @@ cd ../elixir && make docs
 
 This will produce documentation sets for `elixir`, `mix`, etc., under
 the `doc` directory. If you are planning to contribute documentation,
-[please check our best practices for writing documentation](http://elixir-lang.org/docs/stable/elixir/writing-documentation.html).
+[please check our best practices for writing documentation](https://hexdocs.pm/elixir/writing-documentation.html).
 
 ## Development links
 

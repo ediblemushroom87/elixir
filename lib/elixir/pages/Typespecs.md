@@ -26,15 +26,15 @@ The syntax Elixir provides for type specifications is similar to [the one in Erl
           | none()                  # the bottom type, contains no terms
           | atom()
           | map()                   # any map
-          | pid()
+          | pid()                   # process identifier
           | port()
           | reference()
           | struct()                # any struct
           | tuple()                 # tuple of any size
 
                                     ## Numbers
-          | float()                 # float
-          | integer()               # integer
+          | float()
+          | integer()
           | neg_integer()           # ..., -3, -2, -1
           | non_neg_integer()       # 0, 1, 2, 3, ...
           | pos_integer()           # 1, 2, 3, ...
@@ -49,13 +49,15 @@ The syntax Elixir provides for type specifications is similar to [the one in Erl
           | Literals                # Described in section "Literals"
           | Builtin                 # Described in section "Built-in types"
           | Remotes                 # Described in section "Remote types"
+          | UserDefined             # Described in section "User-defined types"
 
 ### Literals
 
 The following literals are also supported in typespecs:
 
-    type :: :atom                         ## Atoms
-          | true | false | nil            # Special atom literals
+    type ::                               ## Atoms
+            :atom                         # atoms: :foo, :bar, ...
+          | true | false | nil            # special atom literals
 
                                           ## Bitstrings
           | <<>>                          # empty bitstring
@@ -106,7 +108,9 @@ Built-in type           | Defined as
 `byte()`                | `0..255`
 `char()`                | `0..0x10FFFF`
 `charlist()`            | `[char()]`
+`nonempty_charlist()`   | `[char(), ...]`
 `fun()`                 | `(... -> any)`
+`function()`            | `fun()`
 `identifier()`          | `pid()` \| `port()` \| `reference()`
 `iodata()`              | `iolist()` \| `binary()`
 `iolist()`              | `maybe_improper_list(byte() \| binary() \| iolist(), binary() \| [])`
@@ -138,7 +142,7 @@ it is common to end a map type with `optional(any) => any`.
 
 Notice that the syntactic representation of `map()` is `%{optional(any) => any}`, not `%{}`. The notation `%{}` specifies the singleton type for the empty map.
 
-## Defining a type
+### User-defined types
 
 The `@type`, `@typep`, and `@opaque` module attributes can be used to define new types:
 
@@ -154,11 +158,9 @@ Types can be parameterized by defining variables as parameters; these variables 
 
 ## Defining a specification
 
-    @spec function_name(type1, type2) :: return_type
-    @callback function_name(type1, type2) :: return_type
-    @macrocallback macro_name(type1, type2) :: Macro.t
+A specification for a function can be defined as follows:
 
-Callbacks are used to define the callbacks functions of behaviours (see the ["Behaviours"](behaviours.html) page in the documentation for more information on behaviours).
+    @spec function_name(type1, type2) :: return_type
 
 Guards can be used to restrict type variables given as arguments to the function.
 
@@ -166,7 +168,7 @@ Guards can be used to restrict type variables given as arguments to the function
 
 If you want to specify more than one variable, you separate them by a comma.
 
-    @spec function(arg1, arg2) :: [arg1, arg2] when arg1: atom, arg2: integer
+    @spec function(arg1, arg2) :: {arg1, arg2} when arg1: atom, arg2: integer
 
 Type variables with no restriction can also be defined.
 
@@ -181,6 +183,57 @@ Specifications can be overloaded just like ordinary functions.
 
     @spec function(integer) :: atom
     @spec function(atom) :: integer
+
+## Behaviours
+
+Behaviours in Elixir (and Erlang) are a way to separate and abstract the generic part of a component (which becomes the *behaviour module*) from the specific part (which becomes the *callback module*).
+
+A behaviour module defines a set of functions and macros (referred to as *callbacks*) that callback modules implementing that behaviour must export. This "interface" identifies the specific part of the component. For example, the `GenServer` behaviour and functions abstract away all the message-passing (sending and receiving) and error reporting that a "server" process will likely want to implement from the specific parts such as the actions that this server process has to perform.
+
+To define a behaviour module, it's enough to define one or more callbacks in that module. To define callbacks, the `@callback` and `@macrocallback` module attributes can be used (for function callbacks and macro callbacks respectively).
+
+    defmodule MyBehaviour do
+      @callback my_fun(arg :: any) :: any
+      @macrocallback my_macro(arg :: any) :: Macro.t
+    end
+
+As seen in the example above, defining a callback is a matter of defining a specification for that callback, made of:
+
+  * the callback name (`my_fun` or `my_macro` in the example)
+  * the arguments that the callback must accept (`arg :: any` in the example)
+  * the *expected* type of the callback return value
+
+### Optional callbacks
+
+Optional callbacks are callbacks that callback modules may implement if they want to, but are not required to. Usually, behaviour modules know if they should call those callbacks based on configuration, or they check if the callbacks are defined with `function_exported?/3` or `macro_exported?/3`.
+
+Optional callbacks can be defined through the `@optional_callbacks` module attribute, which has to be a keyword list with function or macro name as key and arity as value. For example:
+
+    defmodule MyBehaviour do
+      @callback vital_fun() :: any
+      @callback non_vital_fun() :: any
+      @macrocallback non_vital_macro(arg :: any) :: Macro.t
+      @optional_callbacks non_vital_fun: 0, non_vital_macro: 1
+    end
+
+One example of optional callback in Elixir's standard library is `c:GenServer.format_status/2`.
+
+### Implementing behaviours
+
+To specify that a module implements a given behaviour, the `@behaviour` attribute must be used:
+
+    defmodule MyBehaviour do
+      @callback my_fun(arg :: any) :: any
+    end
+
+    defmodule MyCallbackModule do
+      @behaviour MyBehaviour
+      def my_fun(arg), do: arg
+    end
+
+If a callback module that implements a given behaviour doesn't export all the functions and macros defined by that behaviour, the user will be notified through warnings during the compilation process (no errors will happen).
+
+Elixir's standard library contains a few frequently used behaviours such as `GenServer`, `Supervisor`, and `Application`.
 
 ## Notes
 

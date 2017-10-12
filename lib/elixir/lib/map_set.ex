@@ -8,15 +8,15 @@ defmodule MapSet do
       iex> MapSet.new
       #MapSet<[]>
 
-  A set can contain any kind of elements and elements in a set don't have to be
+  A set can contain any kind of elements, and elements in a set don't have to be
   of the same type. By definition, sets can't contain duplicate elements: when
   inserting an element in a set where it's already present, the insertion is
   simply a no-op.
 
-      iex> set = MapSet.new
-      iex> MapSet.put(set, "foo")
+      iex> map_set = MapSet.new
+      iex> MapSet.put(map_set, "foo")
       #MapSet<["foo"]>
-      iex> set |> MapSet.put("foo") |> MapSet.put("foo")
+      iex> map_set |> MapSet.put("foo") |> MapSet.put("foo")
       #MapSet<["foo"]>
 
   A `MapSet` is represented internally using the `%MapSet{}` struct. This struct
@@ -28,16 +28,20 @@ defmodule MapSet do
   Note that, however, the struct fields are private and must not be accessed
   directly; use the functions in this module to perform operations on sets.
 
-  Sets can also be constructed starting from other collection-type data
+  `MapSet`s can also be constructed starting from other collection-type data
   structures: for example, see `MapSet.new/1` or `Enum.into/2`.
   """
 
+  # MapSets have an underlying Map. MapSet elements are keys of said map,
+  # and this empty list is their associated dummy value.
+  @dummy_value []
+
   @type value :: term
 
-  @opaque t(value) :: %__MODULE__{map: %{optional(value) => true}}
+  @opaque t(value) :: %__MODULE__{map: %{optional(value) => []}}
   @type t :: t(term)
 
-  defstruct map: %{}
+  defstruct map: %{}, version: 2
 
   @doc """
   Returns a new set.
@@ -62,19 +66,22 @@ defmodule MapSet do
       #MapSet<[1, 2, 3]>
 
   """
-  @spec new(Enum.t) :: t
-  def new(%__MODULE__{} = mapset), do: mapset
+  @spec new(Enum.t()) :: t
+  def new(enumerable)
+
+  def new(%__MODULE__{} = map_set), do: map_set
+
   def new(enumerable) do
     map =
       enumerable
-      |> Enum.to_list
-      |> do_new([])
+      |> Enum.to_list()
+      |> new_from_list([])
 
     %MapSet{map: map}
   end
 
   @doc """
-  Creates a mapset from an enumerable via the transformation function.
+  Creates a set from an enumerable via the transformation function.
 
   ## Examples
 
@@ -82,55 +89,53 @@ defmodule MapSet do
       #MapSet<[2, 4]>
 
   """
-  @spec new(Enum.t, (term -> val)) :: t(val) when val: value
+  @spec new(Enum.t(), (term -> val)) :: t(val) when val: value
   def new(enumerable, transform) when is_function(transform, 1) do
     map =
       enumerable
-      |> Enum.to_list
-      |> do_new_transform(transform, [])
+      |> Enum.to_list()
+      |> new_from_list_transform(transform, [])
 
     %MapSet{map: map}
   end
 
-  defp do_new([], acc) do
-    acc
-    |> :lists.reverse
-    |> :maps.from_list
-  end
-  defp do_new([item | rest], acc) do
-    do_new(rest, [{item, true} | acc])
+  defp new_from_list([], acc) do
+    :maps.from_list(acc)
   end
 
-  defp do_new_transform([], _fun, acc) do
-    acc
-    |> :lists.reverse
-    |> :maps.from_list
+  defp new_from_list([item | rest], acc) do
+    new_from_list(rest, [{item, @dummy_value} | acc])
   end
-  defp do_new_transform([item | rest], fun, acc) do
-    do_new_transform(rest, fun, [{fun.(item), true} | acc])
+
+  defp new_from_list_transform([], _fun, acc) do
+    :maps.from_list(acc)
+  end
+
+  defp new_from_list_transform([item | rest], fun, acc) do
+    new_from_list_transform(rest, fun, [{fun.(item), @dummy_value} | acc])
   end
 
   @doc """
-  Deletes `value` from `set`.
+  Deletes `value` from `map_set`.
 
-  Returns a new set which is a copy of `set` but without `value`.
+  Returns a new set which is a copy of `map_set` but without `value`.
 
   ## Examples
 
-      iex> set = MapSet.new([1, 2, 3])
-      iex> MapSet.delete(set, 4)
+      iex> map_set = MapSet.new([1, 2, 3])
+      iex> MapSet.delete(map_set, 4)
       #MapSet<[1, 2, 3]>
-      iex> MapSet.delete(set, 2)
+      iex> MapSet.delete(map_set, 2)
       #MapSet<[1, 3]>
 
   """
   @spec delete(t(val1), val2) :: t(val1) when val1: value, val2: value
-  def delete(%MapSet{map: map} = set, value) do
-    %{set | map: Map.delete(map, value)}
+  def delete(%MapSet{map: map} = map_set, value) do
+    %{map_set | map: Map.delete(map, value)}
   end
 
   @doc """
-  Returns a set that is `set1` without the members of `set2`.
+  Returns a set that is `map_set1` without the members of `map_set2`.
 
   ## Examples
 
@@ -139,16 +144,16 @@ defmodule MapSet do
 
   """
   @spec difference(t(val1), t(val2)) :: t(val1) when val1: value, val2: value
-  def difference(mapset1, mapset2)
+  def difference(map_set1, map_set2)
 
   # If the first set is less than twice the size of the second map,
   # it is fastest to re-accumulate items in the first set that are not
   # present in the second set.
-  def difference(%MapSet{map: map1}, %MapSet{map: map2})
-      when map_size(map1) < map_size(map2) * 2 do
-    map = map1
-    |> Map.keys
-    |> filter_not_in(map2)
+  def difference(%MapSet{map: map1}, %MapSet{map: map2}) when map_size(map1) < map_size(map2) * 2 do
+    map =
+      map1
+      |> Map.keys()
+      |> filter_not_in(map2, [])
 
     %MapSet{map: map}
   end
@@ -156,23 +161,24 @@ defmodule MapSet do
   # If the second set is less than half the size of the first set, it's fastest
   # to simply iterate through each item in the second set, deleting them from
   # the first set.
-  def difference(%MapSet{map: map1}, %MapSet{map: map2}) do
-    %MapSet{map: Map.drop(map1, Map.keys(map2))}
+  def difference(%MapSet{map: map1} = map_set, %MapSet{map: map2}) do
+    %{map_set | map: Map.drop(map1, Map.keys(map2))}
   end
 
-  defp filter_not_in(keys, map2, acc \\ [])
   defp filter_not_in([], _map2, acc), do: :maps.from_list(acc)
+
   defp filter_not_in([key | rest], map2, acc) do
-    acc = if Map.has_key?(map2, key) do
-      acc
-    else
-      [{key, true} | acc]
+    case map2 do
+      %{^key => _} ->
+        filter_not_in(rest, map2, acc)
+
+      _ ->
+        filter_not_in(rest, map2, [{key, @dummy_value} | acc])
     end
-    filter_not_in(rest, map2, acc)
   end
 
   @doc """
-  Checks if `set1` and `set2` have no members in common.
+  Checks if `map_set1` and `map_set2` have no members in common.
 
   ## Examples
 
@@ -187,17 +193,18 @@ defmodule MapSet do
     {map1, map2} = order_by_size(map1, map2)
 
     map1
-    |> Map.keys
+    |> Map.keys()
     |> none_in?(map2)
   end
 
   defp none_in?([], _) do
     true
   end
+
   defp none_in?([key | rest], map2) do
-    case Map.has_key?(map2, key) do
-      true -> false
-      false -> none_in?(rest, map2)
+    case map2 do
+      %{^key => _} -> false
+      _ -> none_in?(rest, map2)
     end
   end
 
@@ -215,12 +222,18 @@ defmodule MapSet do
 
   """
   @spec equal?(t, t) :: boolean
-  def equal?(%MapSet{map: map1}, %MapSet{map: map2}) do
+  def equal?(%MapSet{map: map1, version: version}, %MapSet{map: map2, version: version}) do
     Map.equal?(map1, map2)
   end
 
+  # Elixir v1.5 change the map representation, so on
+  # version mismatch we need to compare the keys directly.
+  def equal?(%MapSet{map: map1}, %MapSet{map: map2}) do
+    map_size(map1) == map_size(map2) and map_subset?(Map.keys(map1), map2)
+  end
+
   @doc """
-  Returns a set containing only members that `set1` and `set2` have in common.
+  Returns a set containing only members that `map_set1` and `map_set2` have in common.
 
   ## Examples
 
@@ -232,14 +245,13 @@ defmodule MapSet do
 
   """
   @spec intersection(t(val), t(val)) :: t(val) when val: value
-  def intersection(%MapSet{map: map1}, %MapSet{map: map2}) do
+  def intersection(%MapSet{map: map1} = map_set, %MapSet{map: map2}) do
     {map1, map2} = order_by_size(map1, map2)
-
-    %MapSet{map: Map.take(map2, Map.keys(map1))}
+    %{map_set | map: Map.take(map2, Map.keys(map1))}
   end
 
   @doc """
-  Checks if `set` contains `value`.
+  Checks if `map_set` contains `value`.
 
   ## Examples
 
@@ -251,11 +263,11 @@ defmodule MapSet do
   """
   @spec member?(t, value) :: boolean
   def member?(%MapSet{map: map}, value) do
-    Map.has_key?(map, value)
+    match?(%{^value => _}, map)
   end
 
   @doc """
-  Inserts `value` into `set` if `set` doesn't already contain it.
+  Inserts `value` into `map_set` if `map_set` doesn't already contain it.
 
   ## Examples
 
@@ -266,12 +278,12 @@ defmodule MapSet do
 
   """
   @spec put(t(val), new_val) :: t(val | new_val) when val: value, new_val: value
-  def put(%MapSet{map: map} = set, value) do
-    %{set | map: Map.put(map, value, true)}
+  def put(%MapSet{map: map} = map_set, value) do
+    %{map_set | map: Map.put(map, value, @dummy_value)}
   end
 
   @doc """
-  Returns the number of elements in `set`.
+  Returns the number of elements in `map_set`.
 
   ## Examples
 
@@ -285,9 +297,9 @@ defmodule MapSet do
   end
 
   @doc """
-  Checks if `set1`'s members are all contained in `set2`.
+  Checks if `map_set1`'s members are all contained in `map_set2`.
 
-  This function checks if `set1` is a subset of `set2`.
+  This function checks if `map_set1` is a subset of `map_set2`.
 
   ## Examples
 
@@ -301,24 +313,21 @@ defmodule MapSet do
   def subset?(%MapSet{map: map1}, %MapSet{map: map2}) do
     if map_size(map1) <= map_size(map2) do
       map1
-      |> Map.keys
-      |> do_subset?(map2)
+      |> Map.keys()
+      |> map_subset?(map2)
     else
       false
     end
   end
 
-  defp do_subset?([], _), do: true
-  defp do_subset?([key | rest], map2) do
-    if Map.has_key?(map2, key) do
-      do_subset?(rest, map2)
-    else
-      false
-    end
+  defp map_subset?([], _), do: true
+
+  defp map_subset?([key | rest], map2) do
+    match?(%{^key => _}, map2) and map_subset?(rest, map2)
   end
 
   @doc """
-  Converts `set` to a list.
+  Converts `map_set` to a list.
 
   ## Examples
 
@@ -332,7 +341,7 @@ defmodule MapSet do
   end
 
   @doc """
-  Returns a set containing all members of `set1` and `set2`.
+  Returns a set containing all members of `map_set1` and `map_set2`.
 
   ## Examples
 
@@ -341,34 +350,44 @@ defmodule MapSet do
 
   """
   @spec union(t(val1), t(val2)) :: t(val1 | val2) when val1: value, val2: value
-  def union(%MapSet{map: map1}, %MapSet{map: map2}) do
-    %MapSet{map: Map.merge(map1, map2)}
+  def union(map_set1, map_set2)
+
+  def union(%MapSet{map: map1, version: version} = map_set, %MapSet{map: map2, version: version}) do
+    %{map_set | map: Map.merge(map1, map2)}
   end
 
+  def union(%MapSet{map: map1}, %MapSet{map: map2}) do
+    map = new_from_list(Map.keys(map1) ++ Map.keys(map2), [])
+    %MapSet{map: map}
+  end
+
+  @compile {:inline, [order_by_size: 2]}
   defp order_by_size(map1, map2) when map_size(map1) > map_size(map2), do: {map2, map1}
   defp order_by_size(map1, map2), do: {map1, map2}
 
   defimpl Enumerable do
-    def reduce(set, acc, fun), do: Enumerable.List.reduce(MapSet.to_list(set), acc, fun)
-    def member?(set, val),     do: {:ok, MapSet.member?(set, val)}
-    def count(set),            do: {:ok, MapSet.size(set)}
+    def reduce(map_set, acc, fun), do: Enumerable.List.reduce(MapSet.to_list(map_set), acc, fun)
+    def member?(map_set, val), do: {:ok, MapSet.member?(map_set, val)}
+    def count(map_set), do: {:ok, MapSet.size(map_set)}
   end
 
   defimpl Collectable do
     def into(original) do
-      {original, fn
-        set, {:cont, x} -> MapSet.put(set, x)
-        set, :done -> set
+      fun = fn
+        map_set, {:cont, x} -> MapSet.put(map_set, x)
+        map_set, :done -> map_set
         _, :halt -> :ok
-      end}
+      end
+
+      {original, fun}
     end
   end
 
   defimpl Inspect do
     import Inspect.Algebra
 
-    def inspect(set, opts) do
-      concat ["#MapSet<", Inspect.List.inspect(MapSet.to_list(set), opts), ">"]
+    def inspect(map_set, opts) do
+      concat(["#MapSet<", Inspect.List.inspect(MapSet.to_list(map_set), opts), ">"])
     end
   end
 end

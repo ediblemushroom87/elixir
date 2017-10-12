@@ -39,7 +39,7 @@ defmodule Map do
 
   The alternative access syntax `map.key` is provided alongside `[]` when the
   map has a `:key` key; note that while `map[key]` will return `nil` if `map`
-  doesn't contain the key `key`, `map.key` will raise if `map` doesn't contain
+  doesn't contain `key`, `map.key` will raise if `map` doesn't contain
   the key `:key`.
 
       iex> map = %{foo: "bar", baz: "bong"}
@@ -94,7 +94,7 @@ defmodule Map do
 
   @type key :: any
   @type value :: any
-  @compile {:inline, fetch: 2, put: 3, delete: 2, has_key?: 2}
+  @compile {:inline, fetch: 2, fetch!: 2, get: 2, put: 3, delete: 2, has_key?: 2, replace!: 3}
 
   @doc """
   Returns all keys from `map`.
@@ -162,16 +162,17 @@ defmodule Map do
       %{a: 3}
 
   """
-  @spec new(Enumerable.t) :: map
+  @spec new(Enumerable.t()) :: map
   def new(enumerable)
-  def new(%{__struct__: _} = struct), do: new_from_enum(struct)
+  def new(list) when is_list(list), do: :maps.from_list(list)
+  def new(%_{} = struct), do: new_from_enum(struct)
   def new(%{} = map), do: map
   def new(enum), do: new_from_enum(enum)
 
   defp new_from_enum(enumerable) do
     enumerable
-    |> Enum.to_list
-    |> :maps.from_list
+    |> Enum.to_list()
+    |> :maps.from_list()
   end
 
   @doc """
@@ -185,17 +186,17 @@ defmodule Map do
       %{a: :a, b: :b}
 
   """
-  @spec new(Enumerable.t, (term -> {key, value})) :: map
+  @spec new(Enumerable.t(), (term -> {key, value})) :: map
   def new(enumerable, transform) when is_function(transform, 1) do
     enumerable
-    |> Enum.to_list
+    |> Enum.to_list()
     |> new_transform(transform, [])
   end
 
   defp new_transform([], _fun, acc) do
     acc
-    |> :lists.reverse
-    |> :maps.from_list
+    |> :lists.reverse()
+    |> :maps.from_list()
   end
 
   defp new_transform([item | rest], fun, acc) do
@@ -212,6 +213,7 @@ defmodule Map do
       iex> Map.has_key?(%{a: 1}, :b)
       false
 
+  Inlined by the compiler.
   """
   @spec has_key?(map, key) :: boolean
   def has_key?(map, key), do: :maps.is_key(key, map)
@@ -229,6 +231,7 @@ defmodule Map do
       iex> Map.fetch(%{a: 1}, :b)
       :error
 
+  Inlined by the compiler.
   """
   @spec fetch(map, key) :: {:ok, value} | :error
   def fetch(map, key), do: :maps.find(key, map)
@@ -250,10 +253,7 @@ defmodule Map do
   """
   @spec fetch!(map, key) :: value | no_return
   def fetch!(map, key) do
-    case fetch(map, key) do
-      {:ok, value} -> value
-      :error -> raise KeyError, key: key, term: map
-    end
+    :maps.get(key, map)
   end
 
   @doc """
@@ -263,17 +263,56 @@ defmodule Map do
   ## Examples
 
       iex> Map.put_new(%{a: 1}, :b, 2)
-      %{b: 2, a: 1}
+      %{a: 1, b: 2}
       iex> Map.put_new(%{a: 1, b: 2}, :a, 3)
       %{a: 1, b: 2}
 
   """
   @spec put_new(map, key, value) :: map
   def put_new(map, key, value) do
-    case has_key?(map, key) do
-      true  -> map
-      false -> put(map, key, value)
+    case map do
+      %{^key => _value} ->
+        map
+
+      %{} ->
+        put(map, key, value)
+
+      other ->
+        :erlang.error({:badmap, other})
     end
+  end
+
+  @doc false
+  def replace(map, key, value) do
+    case map do
+      %{^key => _value} ->
+        put(map, key, value)
+
+      %{} ->
+        map
+
+      other ->
+        :erlang.error({:badmap, other})
+    end
+  end
+
+  @doc """
+  Similar to `replace/3`, but will raise a `KeyError`
+  if the key does not exist in the map.
+
+  ## Examples
+
+      iex> Map.replace!(%{a: 1, b: 2}, :a, 3)
+      %{a: 3, b: 2}
+
+      iex> Map.replace!(%{a: 1}, :b, 2)
+      ** (KeyError) key :b not found in: %{a: 1}
+
+  Inlined by the compiler.
+  """
+  @spec replace!(map, key, value) :: map
+  def replace!(map, key, value) do
+    :maps.update(key, value, map)
   end
 
   @doc """
@@ -299,9 +338,15 @@ defmodule Map do
   """
   @spec put_new_lazy(map, key, (() -> value)) :: map
   def put_new_lazy(map, key, fun) when is_function(fun, 0) do
-    case has_key?(map, key) do
-      true  -> map
-      false -> put(map, key, fun.())
+    case map do
+      %{^key => _value} ->
+        map
+
+      %{} ->
+        put(map, key, fun.())
+
+      other ->
+        :erlang.error({:badmap, other})
     end
   end
 
@@ -317,26 +362,31 @@ defmodule Map do
       %{a: 1, c: 3}
 
   """
-  @spec take(map, Enumerable.t) :: map
+  @spec take(map, Enumerable.t()) :: map
   def take(map, keys)
 
   def take(map, keys) when is_map(map) do
     keys
-    |> Enum.to_list
-    |> do_take(map, [])
+    |> Enum.to_list()
+    |> take(map, [])
   end
 
   def take(non_map, _keys) do
     :erlang.error({:badmap, non_map})
   end
 
-  defp do_take([], _map, acc), do: :maps.from_list(acc)
-  defp do_take([key | rest], map, acc) do
-    acc = case fetch(map, key) do
-      {:ok, value} -> [{key, value} | acc]
-      :error -> acc
-    end
-    do_take(rest, map, acc)
+  defp take([], _map, acc) do
+    :maps.from_list(acc)
+  end
+
+  defp take([key | rest], map, acc) do
+    acc =
+      case map do
+        %{^key => value} -> [{key, value} | acc]
+        %{} -> acc
+      end
+
+    take(rest, map, acc)
   end
 
   @doc """
@@ -358,12 +408,17 @@ defmodule Map do
       3
 
   """
-  @spec get(map, key) :: value
   @spec get(map, key, value) :: value
   def get(map, key, default \\ nil) do
-    case fetch(map, key) do
-      {:ok, value} -> value
-      :error -> default
+    case map do
+      %{^key => value} ->
+        value
+
+      %{} ->
+        default
+
+      other ->
+        :erlang.error({:badmap, other}, [map, key, default])
     end
   end
 
@@ -391,9 +446,15 @@ defmodule Map do
   """
   @spec get_lazy(map, key, (() -> value)) :: value
   def get_lazy(map, key, fun) when is_function(fun, 0) do
-    case fetch(map, key) do
-      {:ok, value} -> value
-      :error -> fun.()
+    case map do
+      %{^key => value} ->
+        value
+
+      %{} ->
+        fun.()
+
+      other ->
+        :erlang.error({:badmap, other}, [map, key, fun])
     end
   end
 
@@ -407,6 +468,7 @@ defmodule Map do
       iex> Map.put(%{a: 1, b: 2}, :a, 3)
       %{a: 3, b: 2}
 
+  Inlined by the compiler.
   """
   @spec put(map, key, value) :: map
   def put(map, key, value) do
@@ -425,6 +487,7 @@ defmodule Map do
       iex> Map.delete(%{b: 2}, :a)
       %{b: 2}
 
+  Inlined by the compiler.
   """
   @spec delete(map, key) :: map
   def delete(map, key), do: :maps.remove(key, map)
@@ -450,12 +513,12 @@ defmodule Map do
   defdelegate merge(map1, map2), to: :maps
 
   @doc """
-  Merges two maps into one, resolving conflicts through the given `callback`.
+  Merges two maps into one, resolving conflicts through the given `fun`.
 
   All keys in `map2` will be added to `map1`. The given function will be invoked
   when there are duplicate keys; its arguments are `key` (the duplicate key),
   `value1` (the value of `key` in `map1`), and `value2` (the value of `key` in
-  `map2`). The value returned by `callback` is used as the value under `key` in
+  `map2`). The value returned by `fun` is used as the value under `key` in
   the resulting map.
 
   ## Examples
@@ -467,10 +530,22 @@ defmodule Map do
 
   """
   @spec merge(map, map, (key, value, value -> value)) :: map
-  def merge(map1, map2, callback) when is_function(callback, 3) do
-    :maps.fold fn k, v2, acc ->
-      update(acc, k, v2, fn(v1) -> callback.(k, v1, v2) end)
-    end, map1, map2
+  def merge(map1, map2, fun) when is_function(fun, 3) do
+    if map_size(map1) > map_size(map2) do
+      folder =
+        fn key, val2, acc ->
+          update(acc, key, val2, fn val1 -> fun.(key, val1, val2) end)
+        end
+
+      :maps.fold(folder, map1, map2)
+    else
+      folder =
+        fn key, val2, acc ->
+          update(acc, key, val2, fn val1 -> fun.(key, val2, val1) end)
+        end
+
+      :maps.fold(folder, map2, map1)
+    end
   end
 
   @doc """
@@ -478,7 +553,8 @@ defmodule Map do
 
   If `key` is present in `map` with value `value`, `fun` is invoked with
   argument `value` and its result is used as the new value of `key`. If `key` is
-  not present in `map`, `initial` is inserted as the value of `key`.
+  not present in `map`, `initial` is inserted as the value of `key`. The initial
+  value will not be passed through the update function.
 
   ## Examples
 
@@ -490,11 +566,15 @@ defmodule Map do
   """
   @spec update(map, key, value, (value -> value)) :: map
   def update(map, key, initial, fun) when is_function(fun, 1) do
-    case fetch(map, key) do
-      {:ok, value} ->
+    case map do
+      %{^key => value} ->
         put(map, key, fun.(value))
-      :error ->
+
+      %{} ->
         put(map, key, initial)
+
+      other ->
+        :erlang.error({:badmap, other}, [map, key, initial, fun])
     end
   end
 
@@ -517,9 +597,9 @@ defmodule Map do
   """
   @spec pop(map, key, value) :: {value, map}
   def pop(map, key, default \\ nil) do
-    case map do
-      %{^key => value} -> {value, delete(map, key)}
-      %{} -> {default, map}
+    case :maps.take(key, map) do
+      {_, _} = tuple -> tuple
+      :error -> {default, map}
     end
   end
 
@@ -549,9 +629,15 @@ defmodule Map do
   """
   @spec pop_lazy(map, key, (() -> value)) :: {value, map}
   def pop_lazy(map, key, fun) when is_function(fun, 0) do
-    case fetch(map, key) do
-      {:ok, value} -> {value, delete(map, key)}
-      :error -> {fun.(), map}
+    case map do
+      %{^key => value} ->
+        {value, delete(map, key)}
+
+      %{} ->
+        {fun.(), map}
+
+      other ->
+        :erlang.error({:badmap, other}, [map, key, fun])
     end
   end
 
@@ -566,26 +652,27 @@ defmodule Map do
       %{a: 1, c: 3}
 
   """
-  @spec drop(map, Enumerable.t) :: map
+  @spec drop(map, Enumerable.t()) :: map
   def drop(map, keys)
 
   def drop(map, keys) when is_map(map) do
     keys
-    |> Enum.to_list
+    |> Enum.to_list()
     |> drop_list(map)
   end
 
-  def drop(non_map, _keys) do
-    :erlang.error({:badmap, non_map})
+  def drop(non_map, keys) do
+    :erlang.error({:badmap, non_map}, [non_map, keys])
   end
 
   defp drop_list([], acc), do: acc
+
   defp drop_list([key | rest], acc) do
     drop_list(rest, delete(acc, key))
   end
 
   @doc """
-  Takes all entries corresponding to the given `keys` in `maps` and extracts
+  Takes all entries corresponding to the given `keys` in `map` and extracts
   them into a separate map.
 
   Returns a tuple with the new map and the old map with removed keys.
@@ -598,28 +685,30 @@ defmodule Map do
       {%{a: 1, c: 3}, %{b: 2}}
 
   """
-  @spec split(map, Enumerable.t) :: {map, map}
+  @spec split(map, Enumerable.t()) :: {map, map}
   def split(map, keys)
 
   def split(map, keys) when is_map(map) do
     keys
-    |> Enum.to_list
-    |> do_split([], map)
+    |> Enum.to_list()
+    |> split([], map)
   end
 
-  def split(non_map, _keys) do
-    :erlang.error({:badmap, non_map})
+  def split(non_map, keys) do
+    :erlang.error({:badmap, non_map}, [non_map, keys])
   end
 
-  defp do_split([], inc, exc) do
-    {:maps.from_list(inc), exc}
+  defp split([], included, excluded) do
+    {:maps.from_list(included), excluded}
   end
-  defp do_split([key | rest], inc, exc) do
-    case fetch(exc, key) do
-      {:ok, value} ->
-        do_split(rest, [{key, value} | inc], delete(exc, key))
-      :error ->
-        do_split(rest, inc, exc)
+
+  defp split([key | rest], included, excluded) do
+    case excluded do
+      %{^key => value} ->
+        split(rest, [{key, value} | included], delete(excluded, key))
+
+      _other ->
+        split(rest, included, excluded)
     end
   end
 
@@ -639,17 +728,11 @@ defmodule Map do
       ** (KeyError) key :b not found in: %{a: 1}
 
   """
-  @spec update!(map, key, (value -> value)) :: map | no_return
-  def update!(%{} = map, key, fun) when is_function(fun, 1) do
-    case fetch(map, key) do
-      {:ok, value} ->
-        put(map, key, fun.(value))
-      :error ->
-        raise KeyError, term: map, key: key
-    end
+  @spec update!(map, key, (value -> value)) :: map
+  def update!(map, key, fun) when is_function(fun, 1) do
+    value = fetch!(map, key)
+    put(map, key, fun.(value))
   end
-
-  def update!(map, _key, _fun), do: :erlang.error({:badmap, map})
 
   @doc """
   Gets the value from `key` and updates it, all in one pass.
@@ -684,24 +767,20 @@ defmodule Map do
 
   """
   @spec get_and_update(map, key, (value -> {get, value} | :pop)) :: {get, map} when get: term
-  def get_and_update(%{} = map, key, fun) when is_function(fun, 1) do
-    current =
-      case :maps.find(key, map) do
-        {:ok, value} -> value
-        :error -> nil
-      end
+  def get_and_update(map, key, fun) when is_function(fun, 1) do
+    current = get(map, key)
 
     case fun.(current) do
       {get, update} ->
-        {get, :maps.put(key, update, map)}
+        {get, put(map, key, update)}
+
       :pop ->
-        {current, :maps.remove(key, map)}
+        {current, delete(map, key)}
+
       other ->
         raise "the given function must return a two-element tuple or :pop, got: #{inspect(other)}"
     end
   end
-
-  def get_and_update(map, _key, _fun), do: :erlang.error({:badmap, map})
 
   @doc """
   Gets the value from `key` and updates it. Raises if there is no `key`.
@@ -727,24 +806,22 @@ defmodule Map do
       {1, %{}}
 
   """
-  @spec get_and_update!(map, key, (value -> {get, value})) :: {get, map} | no_return when get: term
-  def get_and_update!(%{} = map, key, fun) when is_function(fun, 1) do
-    case :maps.find(key, map) do
-      {:ok, value} ->
-        case fun.(value) do
-          {get, update} ->
-            {get, :maps.put(key, update, map)}
-          :pop ->
-            {value, :maps.remove(key, map)}
-          other ->
-            raise "the given function must return a two-element tuple or :pop, got: #{inspect(other)}"
-        end
-      :error ->
-        raise KeyError, term: map, key: key
+  @spec get_and_update!(map, key, (value -> {get, value})) :: {get, map} | no_return
+        when get: term
+  def get_and_update!(map, key, fun) when is_function(fun, 1) do
+    value = fetch!(map, key)
+
+    case fun.(value) do
+      {get, update} ->
+        {get, put(map, key, update)}
+
+      :pop ->
+        {value, delete(map, key)}
+
+      other ->
+        raise "the given function must return a two-element tuple or :pop, got: #{inspect(other)}"
     end
   end
-
-  def get_and_update!(map, _key, _fun), do: :erlang.error({:badmap, map})
 
   @doc """
   Converts a `struct` to map.
@@ -768,11 +845,11 @@ defmodule Map do
   """
   @spec from_struct(atom | struct) :: map
   def from_struct(struct) when is_atom(struct) do
-    :maps.remove(:__struct__, struct.__struct__)
+    delete(struct.__struct__(), :__struct__)
   end
 
-  def from_struct(%{__struct__: _} = struct) do
-    :maps.remove(:__struct__, struct)
+  def from_struct(%_{} = struct) do
+    delete(struct, :__struct__)
   end
 
   @doc """
@@ -790,7 +867,11 @@ defmodule Map do
 
   """
   @spec equal?(map, map) :: boolean
+  def equal?(map1, map2)
+
   def equal?(%{} = map1, %{} = map2), do: map1 === map2
+  def equal?(%{} = map1, map2), do: :erlang.error({:badmap, map2}, [map1, map2])
+  def equal?(term, other), do: :erlang.error({:badmap, term}, [term, other])
 
   @doc false
   # TODO: Remove on 2.0

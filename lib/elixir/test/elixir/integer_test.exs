@@ -1,4 +1,4 @@
-Code.require_file "test_helper.exs", __DIR__
+Code.require_file("test_helper.exs", __DIR__)
 
 defmodule IntegerTest do
   use ExUnit.Case, async: true
@@ -7,15 +7,11 @@ defmodule IntegerTest do
 
   require Integer
 
-  def test_is_odd_in_guards(number) when Integer.is_odd(number),
-    do: number
-  def test_is_odd_in_guards(_number),
-    do: false
+  def test_is_odd_in_guards(number) when Integer.is_odd(number), do: number
+  def test_is_odd_in_guards(_number), do: false
 
-  def test_is_even_in_guards(number) when Integer.is_even(number),
-    do: number
-  def test_is_even_in_guards(_number),
-    do: false
+  def test_is_even_in_guards(number) when Integer.is_even(number), do: number
+  def test_is_even_in_guards(_number), do: false
 
   test "is_odd/1" do
     assert Integer.is_odd(0) == false
@@ -126,7 +122,7 @@ defmodule IntegerTest do
     assert Integer.parse("012") === {12, ""}
     assert Integer.parse("+12") === {12, ""}
     assert Integer.parse("-12") === {-12, ""}
-    assert Integer.parse("123456789") === {123456789, ""}
+    assert Integer.parse("123456789") === {123_456_789, ""}
     assert Integer.parse("12.5") === {12, ".5"}
     assert Integer.parse("7.5e-3") === {7, ".5e-3"}
     assert Integer.parse("12x") === {12, "x"}
@@ -137,7 +133,7 @@ defmodule IntegerTest do
 
     assert Integer.parse("12", 10) === {12, ""}
     assert Integer.parse("-12", 12) === {-14, ""}
-    assert Integer.parse("12345678", 9) === {6053444, ""}
+    assert Integer.parse("12345678", 9) === {6_053_444, ""}
     assert Integer.parse("3.14", 4) === {3, ".14"}
     assert Integer.parse("64eb", 16) === {25835, ""}
     assert Integer.parse("64eb", 10) === {64, "eb"}
@@ -150,6 +146,8 @@ defmodule IntegerTest do
 
     # Base should be an integer
     assert_raise ArgumentError, "invalid base 10.2", fn -> Integer.parse("2", 10.2) end
+
+    assert_raise ArgumentError, "invalid base nil", fn -> Integer.parse("2", nil) end
   end
 
   test "to_string/1" do
@@ -203,6 +201,11 @@ defmodule IntegerTest do
     end
   end
 
+  test "to_char_list/1" do
+    module = Integer
+    assert module.to_char_list(42) == '42'
+  end
+
   test "to_charlist/2" do
     assert Integer.to_charlist(42, 2) == '101010'
     assert Integer.to_charlist(42, 10) == '42'
@@ -226,5 +229,27 @@ defmodule IntegerTest do
         Integer.to_charlist(n, n)
       end
     end
+  end
+
+  test "to_char_list/2" do
+    module = Integer
+    assert module.to_char_list(42, 2) == '101010'
+  end
+
+  test "gcd/2" do
+    assert Integer.gcd(1, 5) == 1
+    assert Integer.gcd(2, 3) == 1
+    assert Integer.gcd(8, 12) == 4
+    assert Integer.gcd(-8, 12) == 4
+    assert Integer.gcd(8, -12) == 4
+    assert Integer.gcd(-8, -12) == 4
+    assert Integer.gcd(27, 27) == 27
+    assert Integer.gcd(-27, -27) == 27
+    assert Integer.gcd(-27, 27) == 27
+    assert Integer.gcd(0, 3) == 3
+    assert Integer.gcd(0, -3) == 3
+    assert Integer.gcd(3, 0) == 3
+    assert Integer.gcd(-3, 0) == 3
+    assert Integer.gcd(0, 0) == 0
   end
 end

@@ -56,28 +56,51 @@ defmodule Task do
 
   ## Supervised tasks
 
-  It is also possible to spawn a task under a supervisor
-  with `start_link/1` and `start_link/3`:
+  It is also possible to spawn a task under a supervisor.
+  It is often done by defining the task in its own module:
 
-      Task.start_link(fn -> IO.puts "ok" end)
+      defmodule MyTask do
+        use Task
 
-  Such tasks can be mounted in your supervision tree as:
+        def start_link(arg) do
+          Task.start_link(__MODULE__, :run, [arg])
+        end
 
-      import Supervisor.Spec
+        def run(arg) do
+          # ...
+        end
+      end
 
-      children = [
-        worker(Task, [fn -> IO.puts "ok" end])
-      ]
+  And then passing it to the supervisor:
+
+      Supervisor.start_link([MyTask])
 
   Since these tasks are supervised and not directly linked to
   the caller, they cannot be awaited on. Note `start_link/1`,
-  unlike `async/1`, returns `{:ok, pid}` (which is
-  the result expected by supervision trees).
+  unlike `async/1`, returns `{:ok, pid}` (which is the result
+  expected by supervisors).
 
-  By default, most supervision strategies will try to restart
-  a worker after it exits regardless of the reason. If you design the
-  task to terminate normally (as in the example with `IO.puts/2` above),
-  consider passing `restart: :transient` in the options to `Supervisor.Spec.worker/3`.
+  Note `use Task` defines a `child_spec/1` function, allowing the
+  defined module to be put under a supervision tree. The generated
+  `child_spec/1` can be customized with the following options:
+
+    * `:id` - the child specification id, defaults to the current module
+    * `:start` - how to start the child process (defaults to calling `__MODULE__.start_link/1`)
+    * `:restart` - when the child should be restarted, defaults to `:temporary`
+    * `:shutdown` - how to shut down the child
+
+  Opposite to `GenServer`, `Agent` and `Supervisor`, a Task has
+  a default `:restart` of `:temporary`. This means the task will
+  not be restarted even if it crashes. If you desire the task to
+  be restarted for non-successful exits, do:
+
+      use Task, restart: :transient
+
+  If you want the task to always be restarted:
+
+      use Task, restart: :permanent
+
+  See the `Supervisor` docs for more information.
 
   ## Dynamically supervised tasks
 
@@ -95,11 +118,9 @@ defmodule Task do
   However, in the majority of cases, you want to add the task supervisor
   to your supervision tree:
 
-      import Supervisor.Spec
-
-      children = [
-        supervisor(Task.Supervisor, [[name: MyApp.TaskSupervisor]])
-      ]
+      Supervisor.start_link([
+        {Task.Supervisor, name: MyApp.TaskSupervisor}
+      ])
 
   Now you can dynamically start supervised tasks:
 
@@ -152,10 +173,41 @@ defmodule Task do
 
   @type t :: %__MODULE__{}
 
+  @doc false
+  def child_spec(arg) do
+    %{
+      id: Task,
+      start: {Task, :start_link, [arg]},
+      restart: :temporary
+    }
+  end
+
+  @doc false
+  defmacro __using__(opts) do
+    quote location: :keep do
+      @opts unquote(opts)
+
+      @doc false
+      def child_spec(arg) do
+        default = %{
+          id: __MODULE__,
+          start: {__MODULE__, :start_link, [arg]},
+          restart: :temporary
+        }
+
+        Supervisor.child_spec(default, @opts)
+      end
+
+      defoverridable child_spec: 1
+    end
+  end
+
   @doc """
-  Starts a task as part of a supervision tree.
+  Starts a process linked to the current process.
+
+  This is often used to start the process as part of a supervision tree.
   """
-  @spec start_link(fun) :: {:ok, pid}
+  @spec start_link((() -> any)) :: {:ok, pid}
   def start_link(fun) do
     start_link(:erlang, :apply, [fun, []])
   end
@@ -175,7 +227,7 @@ defmodule Task do
   (i.e. no interest in the returned result) and it should not
   be linked to the current process.
   """
-  @spec start(fun) :: {:ok, pid}
+  @spec start((() -> any)) :: {:ok, pid}
   def start(fun) do
     start(:erlang, :apply, [fun, []])
   end
@@ -204,7 +256,7 @@ defmodule Task do
 
   See also `async/3`.
   """
-  @spec async(fun) :: t
+  @spec async((() -> any)) :: t
   def async(fun) do
     async(:erlang, :apply, [fun, []])
   end
@@ -286,16 +338,18 @@ defmodule Task do
   Returns a stream that runs the given `module`, `function`, and `args`
   concurrently on each item in `enumerable`.
 
-  Each item will be appended to the given `args` and processed by its
-  own task. The tasks will be linked to the current process similarly to
-  `async/3`.
+  Each item will be prepended to the given `args` and processed by its
+  own task. The tasks will be linked to an intermediate process that is
+  then linked to the current process. This means a failure in a task
+  terminates the current process and a failure in the current process
+  terminates all tasks.
 
-  When streamed, each task will emit `{:ok, val}` upon successful
-  completion or `{:exit, val}` if the caller is trapping exits. Results
-  are emitted in the same order as the original `enumerable`.
+  When streamed, each task will emit `{:ok, value}` upon successful
+  completion or `{:exit, reason}` if the caller is trapping exits.
+  Results are emitted in the same order as the original `enumerable`.
 
   The level of concurrency can be controlled via the `:max_concurrency`
-  option and defaults to `System.schedulers_online/1`. A timeout
+  option and defaults to `System.schedulers_online/0`. A timeout
   can also be given as an option representing the maximum amount of
   time to wait without a task reply.
 
@@ -307,10 +361,18 @@ defmodule Task do
   ## Options
 
     * `:max_concurrency` - sets the maximum number of tasks to run
-      at the same time. Defaults to `System.schedulers_online/1`.
-    * `:timeout` - the maximum amount of time to wait (in milliseconds)
-      without receiving a task reply (across all running tasks).
-      Defaults to `5000`.
+      at the same time. Defaults to `System.schedulers_online/0`.
+    * `:ordered` - whether the results should be returned in the same order
+      as the input stream. This option is useful when you have large
+      streams and don't want to buffer results before they are delivered.
+      Defaults to `true`.
+    * `:timeout` - the maximum amount of time (in milliseconds) each
+      task is allowed to execute for. Defaults to `5000`.
+    * `:on_timeout` - what do to when a task times out. The possible
+      values are:
+      * `:exit` (default) - the process that spawned the tasks exits.
+      * `:kill_task` - the task that timed out is killed. The value
+        emitted for that task is `{:exit, :timeout}`.
 
   ## Example
 
@@ -327,7 +389,7 @@ defmodule Task do
       Enum.to_list(stream)
 
   """
-  @spec async_stream(Enumerable.t, module, atom, [term], Keyword.t) :: Enumerable.t
+  @spec async_stream(Enumerable.t(), module, atom, [term], keyword) :: Enumerable.t()
   def async_stream(enumerable, module, function, args, options \\ [])
       when is_atom(module) and is_atom(function) and is_list(args) do
     build_stream(enumerable, {module, function, args}, options)
@@ -341,9 +403,18 @@ defmodule Task do
   processed by its own task. The tasks will be linked to the current process,
   similarly to `async/1`.
 
-  See `async_stream/5` for discussion, options, and examples.
+  ## Example
+
+  Count the codepoints in each string asynchronously, then add the counts together using reduce.
+
+      iex> strings = ["long string", "longer string", "there are many of these"]
+      iex> stream = Task.async_stream(strings, fn text -> text |> String.codepoints |> Enum.count end)
+      iex> Enum.reduce(stream, 0, fn {:ok, num}, acc -> num + acc end)
+      47
+
+  See `async_stream/5` for discussion, options, and more examples.
   """
-  @spec async_stream(Enumerable.t, (term -> term), Keyword.t) :: Enumerable.t
+  @spec async_stream(Enumerable.t(), (term -> term), keyword) :: Enumerable.t()
   def async_stream(enumerable, fun, options \\ []) when is_function(fun, 1) do
     build_stream(enumerable, fun, options)
   end
@@ -354,24 +425,30 @@ defmodule Task do
     end)
   end
 
-  defp get_info(self) do
-    {node(),
-     case Process.info(self, :registered_name) do
-       {:registered_name, []} -> self()
-       {:registered_name, name} -> name
-     end}
+  # Returns a tuple with the node where this is executed and either the
+  # registered name of the given pid or the pid of where this is executed. Used
+  # when exiting from tasks to print out from where the task was started.
+  defp get_info(pid) do
+    self_or_name =
+      case Process.info(pid, :registered_name) do
+        {:registered_name, []} -> self()
+        {:registered_name, name} -> name
+      end
+
+    {node(), self_or_name}
   end
 
   @doc """
   Awaits a task reply and returns it.
 
-  A timeout, in milliseconds, can be given with default value
-  of `5000`. In case the task process dies, this function will
-  exit with the same reason as the task.
+  In case the task process dies, the current process will exit with the same
+  reason as the task.
 
-  If the timeout is exceeded, `await` will exit; however,
-  the task will continue to run. When the calling process exits, its
-  exit signal will terminate the task if it is not trapping exits.
+  A timeout, in milliseconds, can be given with default value of `5000`. If the
+  timeout is exceeded, then the current process will exit. If the task process
+  is linked to the current process which is the case when a task is started with
+  `async`, then the task process will also exit. If the task process is trapping
+  exits or not linked to the current process, then it will continue to run.
 
   This function assumes the task's monitor is still active or the monitor's
   `:DOWN` message is in the message queue. If it has been demonitored, or the
@@ -407,6 +484,7 @@ defmodule Task do
       {^ref, reply} ->
         Process.demonitor(ref, [:flush])
         reply
+
       {:DOWN, ^ref, _, proc, reason} ->
         exit({reason(reason, proc), {__MODULE__, :await, [task, timeout]}})
     after
@@ -419,28 +497,26 @@ defmodule Task do
   @doc false
   # TODO: Remove on 2.0
   # (hard-deprecated in elixir_dispatch)
-  def find(tasks, msg) do
-    do_find(tasks, msg)
-  end
-
-  defp do_find(tasks, {ref, reply}) when is_reference(ref) do
-    Enum.find_value tasks, fn
+  def find(tasks, {ref, reply}) when is_reference(ref) do
+    Enum.find_value(tasks, fn
       %Task{ref: ^ref} = task ->
         Process.demonitor(ref, [:flush])
         {reply, task}
+
       %Task{} ->
         nil
-    end
+    end)
   end
 
-  defp do_find(tasks, {:DOWN, ref, _, proc, reason} = msg) when is_reference(ref) do
+  def find(tasks, {:DOWN, ref, _, proc, reason} = msg) when is_reference(ref) do
     find = fn %Task{ref: task_ref} -> task_ref == ref end
+
     if Enum.find(tasks, find) do
       exit({reason(reason, proc), {__MODULE__, :find, [tasks, msg]}})
     end
   end
 
-  defp do_find(_tasks, _msg) do
+  def find(_tasks, _msg) do
     nil
   end
 
@@ -484,7 +560,7 @@ defmodule Task do
   handle this case and return the result.
   """
   @spec yield(t, timeout) :: {:ok, term} | {:exit, term} | nil
-  def yield(task, timeout \\ 5_000)
+  def yield(task, timeout \\ 5000)
 
   def yield(%Task{owner: owner} = task, _) when owner != self() do
     raise ArgumentError, invalid_owner_error(task)
@@ -495,8 +571,10 @@ defmodule Task do
       {^ref, reply} ->
         Process.demonitor(ref, [:flush])
         {:ok, reply}
+
       {:DOWN, ^ref, _, proc, :noconnection} ->
         exit({reason(:noconnection, proc), {__MODULE__, :yield, [task, timeout]}})
+
       {:DOWN, ^ref, _, _, reason} ->
         {:exit, reason}
     after
@@ -553,7 +631,7 @@ defmodule Task do
       end
 
   In the example above, we create tasks that sleep from 1
-  up to 10 seconds and return the amount of seconds they slept.
+  up to 10 seconds and return the number of seconds they slept.
   If you execute the code all at once, you should see 1 up to 5
   printed, as those were the tasks that have replied in the
   given time. All other tasks will have been shut down using
@@ -563,6 +641,7 @@ defmodule Task do
   def yield_many(tasks, timeout \\ 5000) do
     timeout_ref = make_ref()
     timer_ref = Process.send_after(self(), timeout_ref, timeout)
+
     try do
       yield_many(tasks, timeout_ref, :infinity)
     catch
@@ -592,11 +671,9 @@ defmodule Task do
 
       ^timeout_ref ->
         [{task, nil} | yield_many(rest, timeout_ref, 0)]
-
     after
       timeout ->
         [{task, nil} | yield_many(rest, timeout_ref, 0)]
-
     end
   end
 
@@ -610,7 +687,7 @@ defmodule Task do
   Returns `{:ok, reply}` if the reply is received while shutting down the task,
   `{:exit, reason}` if the task died, otherwise `nil`.
 
-  The shutdown method is either a timeout or `:brutal_kill`. In case
+  The second argument is either a timeout or `:brutal_kill`. In case
   of a `timeout`, a `:shutdown` exit signal is sent to the task process
   and if it does not exit within the timeout, it is killed. With `:brutal_kill`
   the task is killed straight away. In case the task terminates abnormally
@@ -628,10 +705,10 @@ defmodule Task do
   `{:exit, :noproc}` as the result or exit reason can not be determined.
   """
   @spec shutdown(t, timeout | :brutal_kill) :: {:ok, term} | {:exit, term} | nil
-  def shutdown(task, shutdown \\ 5_000)
+  def shutdown(task, shutdown \\ 5000)
 
   def shutdown(%Task{pid: nil} = task, _) do
-    raise ArgumentError, "task #{inspect task} does not have an associated task process"
+    raise ArgumentError, "task #{inspect(task)} does not have an associated task process"
   end
 
   def shutdown(%Task{owner: owner} = task, _) when owner != self() do
@@ -645,8 +722,10 @@ defmodule Task do
     case shutdown_receive(task, mon, :brutal_kill, :infinity) do
       {:down, proc, :noconnection} ->
         exit({reason(:noconnection, proc), {__MODULE__, :shutdown, [task, :brutal_kill]}})
+
       {:down, _, reason} ->
         {:exit, reason}
+
       result ->
         result
     end
@@ -655,11 +734,14 @@ defmodule Task do
   def shutdown(%Task{pid: pid} = task, timeout) do
     mon = Process.monitor(pid)
     exit(pid, :shutdown)
+
     case shutdown_receive(task, mon, :shutdown, timeout) do
       {:down, proc, :noconnection} ->
         exit({reason(:noconnection, proc), {__MODULE__, :shutdown, [task, timeout]}})
+
       {:down, _, reason} ->
         {:exit, reason}
+
       result ->
         result
     end
@@ -668,17 +750,17 @@ defmodule Task do
   ## Helpers
 
   defp reason(:noconnection, proc), do: {:nodedown, monitor_node(proc)}
-  defp reason(reason, _),           do: reason
+  defp reason(reason, _), do: reason
 
   defp monitor_node(pid) when is_pid(pid), do: node(pid)
-  defp monitor_node({_, node}),            do: node
+  defp monitor_node({_, node}), do: node
 
   # spawn a process to ensure task gets exit signal if process dies from exit signal
   # between unlink and exit.
   defp exit(task, reason) do
     caller = self()
     ref = make_ref()
-    enforcer = spawn(fn() -> enforce_exit(task, reason, caller, ref) end)
+    enforcer = spawn(fn -> enforce_exit(task, reason, caller, ref) end)
     Process.unlink(task)
     Process.exit(task, reason)
     send(enforcer, {:done, ref})
@@ -687,8 +769,9 @@ defmodule Task do
 
   defp enforce_exit(pid, reason, caller, ref) do
     mon = Process.monitor(caller)
+
     receive do
-      {:done, ^ref}          -> :ok
+      {:done, ^ref} -> :ok
       {:DOWN, ^mon, _, _, _} -> Process.exit(pid, reason)
     end
   end
@@ -698,12 +781,15 @@ defmodule Task do
       {:DOWN, ^mon, _, _, :shutdown} when type in [:shutdown, :timeout_kill] ->
         Process.demonitor(ref, [:flush])
         flush_reply(ref)
+
       {:DOWN, ^mon, _, _, :killed} when type == :brutal_kill ->
         Process.demonitor(ref, [:flush])
         flush_reply(ref)
+
       {:DOWN, ^mon, _, proc, :noproc} ->
         reason = flush_noproc(ref, proc, type)
         flush_reply(ref) || reason
+
       {:DOWN, ^mon, _, proc, reason} ->
         Process.demonitor(ref, [:flush])
         flush_reply(ref) || {:down, proc, reason}
@@ -726,8 +812,10 @@ defmodule Task do
     receive do
       {:DOWN, ^ref, _, _, :shutdown} when type in [:shutdown, :timeout_kill] ->
         nil
+
       {:DOWN, ^ref, _, _, :killed} when type == :brutal_kill ->
         nil
+
       {:DOWN, ^ref, _, _, reason} ->
         {:down, proc, reason}
     after
@@ -738,6 +826,6 @@ defmodule Task do
   end
 
   defp invalid_owner_error(task) do
-    "task #{inspect task} must be queried from the owner but was queried from #{inspect self()}"
+    "task #{inspect(task)} must be queried from the owner but was queried from #{inspect(self())}"
   end
 end

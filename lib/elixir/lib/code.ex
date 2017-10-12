@@ -17,7 +17,7 @@ defmodule Code do
 
   """
   def loaded_files do
-    :elixir_code_server.call :loaded
+    :elixir_code_server.call(:loaded)
   end
 
   @doc """
@@ -36,7 +36,7 @@ defmodule Code do
 
   """
   def unload_files(files) do
-    :elixir_code_server.cast {:unload_files, files}
+    :elixir_code_server.cast({:unload_files, files})
   end
 
   @doc """
@@ -56,7 +56,7 @@ defmodule Code do
 
   """
   def append_path(path) do
-    :code.add_pathz(to_charlist(Path.expand path))
+    :code.add_pathz(to_charlist(Path.expand(path)))
   end
 
   @doc """
@@ -76,7 +76,7 @@ defmodule Code do
 
   """
   def prepend_path(path) do
-    :code.add_patha(to_charlist(Path.expand path))
+    :code.add_patha(to_charlist(Path.expand(path)))
   end
 
   @doc """
@@ -95,7 +95,7 @@ defmodule Code do
 
   """
   def delete_path(path) do
-    :code.del_path(to_charlist(Path.expand path))
+    :code.del_path(to_charlist(Path.expand(path)))
   end
 
   @doc """
@@ -103,6 +103,12 @@ defmodule Code do
 
   The `binding` argument is a keyword list of variable bindings.
   The `opts` argument is a keyword list of environment options.
+
+  **Warning**: `string` can be any Elixir code and will be executed with
+  the same privileges as the Erlang VM: this means that such code could
+  compromise the machine (for example by executing system commands).
+  Don't use `eval_string/3` with untrusted input (such as strings coming
+  from the network).
 
   ## Options
 
@@ -161,14 +167,186 @@ defmodule Code do
   def eval_string(string, binding \\ [], opts \\ [])
 
   def eval_string(string, binding, %Macro.Env{} = env) do
-    {value, binding, _env, _scope} = :elixir.eval to_charlist(string), binding, Map.to_list(env)
+    {value, binding, _env, _scope} = :elixir.eval(to_charlist(string), binding, Map.to_list(env))
     {value, binding}
   end
 
   def eval_string(string, binding, opts) when is_list(opts) do
     validate_eval_opts(opts)
-    {value, binding, _env, _scope} = :elixir.eval to_charlist(string), binding, opts
+    {value, binding, _env, _scope} = :elixir.eval(to_charlist(string), binding, opts)
     {value, binding}
+  end
+
+  @doc """
+  Formats the given code `string`.
+
+  The formatter receives a string representing Elixir code and
+  returns iodata representing the formatted code according to
+  pre-defined rules.
+
+  ## Options
+
+    * `:file` - the file which contains the string, used for error
+      reporting
+
+    * `:line` - the line the string starts, used for error reporting
+
+    * `:line_length` - the line length to aim for when formatting
+      the document. Defaults to 98.
+
+    * `:locals_without_parens` - a keyword list of name and arity
+      pairs that should be kept without parens whenever possible.
+      The arity may be the atom `:*`, which implies all arities of
+      that name. The formatter already includes a list of functions
+      and this option augments this list.
+
+    * `:rename_deprecated_at` - rename all known deprecated functions
+      at the given version to their non-deprecated equivalent. It
+      expects a valid `Version` which is usually the minimum Elixir
+      version supported by the project.
+
+  ## Design principles
+
+  The formatter was designed under three principles.
+
+  First, the formatter never changes the semantics of the code by
+  default. This means the input AST and the output AST are equivalent.
+  Optional behaviour, such as `:rename_deprecated_at`, is allowed to
+  break this guarantee.
+
+  The second principle is to provide as little configuration as possible.
+  This eases the formatter adoption by removing contention points while
+  making sure a single style is followed consistently by the community as
+  a whole.
+
+  The formatter does not hard code names. The formatter will not behave
+  specially because a function is named `defmodule`, `def`, etc. This
+  principle mirrors Elixir's goal of being an extensible language where
+  developers can extend the language with new constructs as if they were
+  part of the language. When it is absolutely necessary to change behaviour
+  based on the name, this behaviour should be configurable, such as the
+  `:locals_without_parens` option.
+
+  ## Keeping input formatting
+
+  The formatter respects the input format in some cases. Those are
+  listed below:
+
+    * Insignificant digits in numbers are kept as is. The formatter
+      however always inserts underscores for decimal numbers with more
+      than 5 digits and converts hexadecimal digits to uppercase
+
+    * Strings, charlists, atoms and sigils are kept as is. No character
+      is automatically escaped or unescaped. The choice of delimiter is
+      also respected from the input
+
+    * Newlines inside blocks are kept as in the input except for:
+      1) expressions that take multiple lines will always have an empty
+      line before and after and 2) empty lines are always squeezed
+      together into a single empty line
+
+    * The choice between `:do` keyword and `do/end` blocks is left
+      to the user
+
+    * Lists, tuples, bitstrings, maps, and structs will be broken into
+      multiple lines if they are followed by a newline in the opening
+      bracket and preceded by a new line in the closing bracket
+
+    * Pipeline operators, like `|>` and others with the same precedence,
+      will span multiple lines if they spanned multiple lines in the input
+
+  The behaviours above are not guaranteed. We may remove or add new
+  rules in the future. The goal of documenting them is to provide better
+  understanding on what to expect from the formatter.
+
+  ## Forcing multi-line lists, maps, tuples, etc
+
+  As mentioned in the previous section, lists, tuples, bitstrings, maps,
+  and structs will be broken into multiple lines if they are followed by
+  a newline in the opening bracket and preceded by a new line in the
+  closing bracket lines. This means that
+
+      [foo,
+       bar]
+
+  will be formatted as
+
+      [foo, bar]
+
+  since there is no newline immediately after `[` and before `]`. The
+  following, however, will always be formatted in multiple lines:
+
+      [
+        foo,
+        bar
+      ]
+
+  Keywords in function calls and typespecs (without the surrounding
+  brackets) can also be forced to be rendering on multiple lines
+  as long as each entry appear on its own line. For example:
+
+      defstruct name: nil,
+                age: 0
+
+  ## Code comments
+
+  The formatter also formats code comments in a way to guarantee a space
+  is always added between the start of the comments (#) and the next
+  character.
+
+  The formatter also extracts all trailing comments to their previous line.
+  For example, the code below
+
+      hello # world
+
+  will be rewritten to
+
+      # world
+      hello
+
+  Because code comments are handled apart from the code representation (AST),
+  there are some situations where code comments are seen as ambiguous by the
+  code formatter. For example, the comment in the anonymous function below
+
+      fn
+        arg1 ->
+          body1
+          # comment
+
+        arg2 ->
+          body2
+      end
+
+  and in this one
+
+      fn
+        arg1 ->
+          body1
+
+        # comment
+        arg2 ->
+          body2
+      end
+
+  are considered equivalent because the formatter strips all original formatting.
+  In such cases, the code formatter will always format to the latter.
+  """
+  def format_string!(string, opts \\ []) when is_binary(string) and is_list(opts) do
+    line_length = Keyword.get(opts, :line_length, 98)
+    algebra = Code.Formatter.to_algebra!(string, opts)
+    Inspect.Algebra.format(algebra, line_length)
+  end
+
+  @doc """
+  Formats a file.
+
+  See `format_string!/2` for more information on code formatting and
+  available options.
+  """
+  def format_file!(file, opts \\ []) when is_binary(file) and is_list(opts) do
+    string = File.read!(file)
+    formatted = format_string!(string, [file: file, line: 1] ++ opts)
+    [formatted, ?\n]
   end
 
   @doc """
@@ -198,21 +376,21 @@ defmodule Code do
   def eval_quoted(quoted, binding \\ [], opts \\ [])
 
   def eval_quoted(quoted, binding, %Macro.Env{} = env) do
-    {value, binding, _env, _scope} = :elixir.eval_quoted quoted, binding, Map.to_list(env)
+    {value, binding, _env, _scope} = :elixir.eval_quoted(quoted, binding, Map.to_list(env))
     {value, binding}
   end
 
   def eval_quoted(quoted, binding, opts) when is_list(opts) do
     validate_eval_opts(opts)
-    {value, binding, _env, _scope} = :elixir.eval_quoted quoted, binding, opts
+    {value, binding, _env, _scope} = :elixir.eval_quoted(quoted, binding, opts)
     {value, binding}
   end
 
   defp validate_eval_opts(opts) do
     if f = opts[:functions], do: validate_imports(:functions, f)
-    if m = opts[:macros],    do: validate_imports(:macros, m)
-    if a = opts[:aliases],   do: validate_aliases(:aliases, a)
-    if r = opts[:requires],  do: validate_requires(:requires, r)
+    if m = opts[:macros], do: validate_imports(:macros, m)
+    if a = opts[:aliases], do: validate_aliases(:aliases, a)
+    if r = opts[:requires], do: validate_requires(:requires, r)
   end
 
   defp validate_requires(kind, requires) do
@@ -224,24 +402,31 @@ defmodule Code do
   end
 
   defp validate_aliases(kind, aliases) do
-    valid = is_list(aliases) and Enum.all?(aliases, fn {k, v} ->
-      is_atom(k) and is_atom(v)
-    end)
+    valid =
+      is_list(aliases) and
+        Enum.all?(aliases, fn {k, v} ->
+          is_atom(k) and is_atom(v)
+        end)
 
     unless valid do
-      raise ArgumentError, "expected :#{kind} option given to eval in the format: [{module, module}]"
+      raise ArgumentError,
+            "expected :#{kind} option given to eval in the format: [{module, module}]"
     end
   end
 
   defp validate_imports(kind, imports) do
-    valid = is_list(imports) and Enum.all?(imports, fn {k, v} ->
-      is_atom(k) and is_list(v) and Enum.all?(v, fn {name, arity} ->
-        is_atom(name) and is_integer(arity)
-      end)
-    end)
+    valid =
+      is_list(imports) and
+        Enum.all?(imports, fn {k, v} ->
+          is_atom(k) and is_list(v) and
+            Enum.all?(v, fn {name, arity} ->
+              is_atom(name) and is_integer(arity)
+            end)
+        end)
 
     unless valid do
-      raise ArgumentError, "expected :#{kind} option given to eval in the format: [{module, [{name, arity}]}]"
+      raise ArgumentError,
+            "expected :#{kind} option given to eval in the format: [{module, [{name, arity}]}]"
     end
   end
 
@@ -268,9 +453,12 @@ defmodule Code do
   representation.
   """
   def string_to_quoted(string, opts \\ []) when is_list(opts) do
-    file = Keyword.get opts, :file, "nofile"
-    line = Keyword.get opts, :line, 1
-    :elixir.string_to_quoted(to_charlist(string), line, file, opts)
+    file = Keyword.get(opts, :file, "nofile")
+    line = Keyword.get(opts, :line, 1)
+
+    with {:ok, tokens} <- :elixir.string_to_tokens(to_charlist(string), line, file, opts) do
+      :elixir.tokens_to_quoted(tokens, file, opts)
+    end
   end
 
   @doc """
@@ -284,8 +472,8 @@ defmodule Code do
   Check `string_to_quoted/2` for options information.
   """
   def string_to_quoted!(string, opts \\ []) when is_list(opts) do
-    file = Keyword.get opts, :file, "nofile"
-    line = Keyword.get opts, :line, 1
+    file = Keyword.get(opts, :file, "nofile")
+    line = Keyword.get(opts, :line, 1)
     :elixir.string_to_quoted!(to_charlist(string), line, file, opts)
   end
 
@@ -298,9 +486,9 @@ defmodule Code do
   byte code, `eval_file` simply evaluates the file contents and returns the
   evaluation result and its bindings.
   """
-  def eval_file(file, relative_to \\ nil) do
+  def eval_file(file, relative_to \\ nil) when is_binary(file) do
     file = find_file(file, relative_to)
-    eval_string File.read!(file), [], [file: file, line: 1]
+    eval_string(File.read!(file), [], file: file, line: 1)
   end
 
   @doc """
@@ -324,9 +512,9 @@ defmodule Code do
   """
   def load_file(file, relative_to \\ nil) when is_binary(file) do
     file = find_file(file, relative_to)
-    :elixir_code_server.call {:acquire, file}
-    loaded = :elixir_compiler.file file
-    :elixir_code_server.cast {:loaded, file}
+    :elixir_code_server.call({:acquire, file})
+    loaded = :elixir_compiler.file(file)
+    :elixir_code_server.cast({:loaded, file})
     loaded
   end
 
@@ -335,11 +523,11 @@ defmodule Code do
 
   Accepts `relative_to` as an argument to tell where the file is located.
   The return value is the same as that of `load_file/2`. If the file was already
-  required/loaded, doesn't do anything and returns `nil`.
+  required/loaded, `require_file` doesn't do anything and returns `nil`.
 
   Notice that if `require_file` is invoked by different processes concurrently,
   the first process to invoke `require_file` acquires a lock and the remaining
-  ones will block until the file is available. I.e. if `require_file` is called
+  ones will block until the file is available. I.e., if `require_file` is called
   N times with a given file, it will be loaded only once. The first process to
   call `require_file` will get the list of loaded modules, others will get `nil`.
 
@@ -362,13 +550,17 @@ defmodule Code do
     file = find_file(file, relative_to)
 
     case :elixir_code_server.call({:acquire, file}) do
-      :loaded  ->
+      :loaded ->
         nil
-      {:queued, ref}  ->
-        receive do {:elixir_code_server, ^ref, :loaded} -> nil end
+
+      {:queued, ref} ->
+        receive do
+          {:elixir_code_server, ^ref, :loaded} -> nil
+        end
+
       :proceed ->
-        loaded = :elixir_compiler.file file
-        :elixir_code_server.cast {:loaded, file}
+        loaded = :elixir_compiler.file(file)
+        :elixir_code_server.cast({:loaded, file})
         loaded
     end
   end
@@ -382,11 +574,11 @@ defmodule Code do
 
       Code.compiler_options
       #=> %{debug_info: true, docs: true,
-            warnings_as_errors: false, ignore_module_conflict: false}
+      #=>   warnings_as_errors: false, ignore_module_conflict: false}
 
   """
   def compiler_options do
-    :elixir_config.get :compiler_options
+    :elixir_config.get(:compiler_options)
   end
 
   @doc """
@@ -434,46 +626,52 @@ defmodule Code do
 
       Code.compiler_options(debug_info: true)
       #=> %{debug_info: true, docs: true,
-            warnings_as_errors: false, ignore_module_conflict: false}
+      #=>   warnings_as_errors: false, ignore_module_conflict: false}
 
   """
   def compiler_options(opts) do
     available = available_compiler_options()
 
-    Enum.each(opts, fn({key, value}) ->
+    Enum.each(opts, fn {key, value} ->
       cond do
-        not key in available ->
+        key not in available ->
           raise "unknown compiler option: #{inspect(key)}"
+
         not is_boolean(value) ->
           raise "compiler option #{inspect(key)} should be a boolean, got: #{inspect(value)}"
+
         true ->
           :ok
       end
     end)
 
-    :elixir_config.update :compiler_options, &Enum.into(opts, &1)
+    :elixir_config.update(:compiler_options, &Enum.into(opts, &1))
   end
 
   @doc """
   Compiles the given string.
 
   Returns a list of tuples where the first element is the module name
-  and the second one is its byte code (as a binary).
+  and the second one is its byte code (as a binary). A `file` can be
+  given as second argument which will be used for reporting warnings
+  and errors.
 
-  For compiling many files at once, check `Kernel.ParallelCompiler.files/2`.
+  For compiling many files at once, check `Kernel.ParallelCompiler.compile/2`.
   """
   def compile_string(string, file \\ "nofile") when is_binary(file) do
-    :elixir_compiler.string to_charlist(string), file
+    :elixir_compiler.string(to_charlist(string), file)
   end
 
   @doc """
   Compiles the quoted expression.
 
   Returns a list of tuples where the first element is the module name and
-  the second one is its byte code (as a binary).
+  the second one is its byte code (as a binary). A `file` can be
+  given as second argument which will be used for reporting warnings
+  and errors.
   """
   def compile_quoted(quoted, file \\ "nofile") when is_binary(file) do
-    :elixir_compiler.quoted quoted, file
+    :elixir_compiler.quoted(quoted, file)
   end
 
   @doc """
@@ -482,7 +680,7 @@ defmodule Code do
   If the module is already loaded, this works as no-op. If the module
   was not yet loaded, it tries to load it.
 
-  If it succeeds loading the module, it returns `{:module, module}`.
+  If it succeeds in loading the module, it returns `{:module, module}`.
   If not, returns `{:error, reason}` with the error reason.
 
   ## Code loading on the Erlang VM
@@ -498,7 +696,7 @@ defmodule Code do
   module uses this function to check if a specific parser exists for a given
   URI scheme.
 
-  ## Code.ensure_compiled/1
+  ## `ensure_compiled/1`
 
   Elixir also contains an `ensure_compiled/1` function that is a
   superset of `ensure_loaded/1`.
@@ -507,8 +705,13 @@ defmodule Code do
   you may need to use a module that was not yet compiled, therefore
   it can't even be loaded.
 
-  `ensure_compiled/1` halts the current process until the
-  module we are depending on is available.
+  When invoked, `ensure_compiled/1` halts the compilation of the caller
+  until the module given to `ensure_compiled/1` becomes available or
+  all files for the current project have been compiled. If compilation
+  finishes and the module is not available, an error tuple is returned.
+
+  `ensure_compiled/1` does not apply to dependencies, as dependencies
+  must be compiled upfront.
 
   In most cases, `ensure_loaded/1` is enough. `ensure_compiled/1`
   must be used in rare cases, usually involving macros that need to
@@ -524,7 +727,7 @@ defmodule Code do
 
   """
   @spec ensure_loaded(module) ::
-        {:module, module} | {:error, :embedded | :badfile | :nofile | :on_load_failure}
+          {:module, module} | {:error, :embedded | :badfile | :nofile | :on_load_failure}
   def ensure_loaded(module) when is_atom(module) do
     :code.ensure_loaded(module)
   end
@@ -553,24 +756,26 @@ defmodule Code do
   not loaded yet, it checks if it needs to be compiled first and then
   tries to load it.
 
-  If it succeeds loading the module, it returns `{:module, module}`.
+  If it succeeds in loading the module, it returns `{:module, module}`.
   If not, returns `{:error, reason}` with the error reason.
 
   Check `ensure_loaded/1` for more information on module loading
   and when to use `ensure_loaded/1` or `ensure_compiled/1`.
   """
   @spec ensure_compiled(module) ::
-        {:module, module} | {:error, :embedded | :badfile | :nofile | :on_load_failure}
+          {:module, module} | {:error, :embedded | :badfile | :nofile | :on_load_failure}
   def ensure_compiled(module) when is_atom(module) do
     case :code.ensure_loaded(module) do
       {:error, :nofile} = error ->
         if is_pid(:erlang.get(:elixir_compiler_pid)) and
-           Kernel.ErrorHandler.ensure_compiled(module, :module) do
+             Kernel.ErrorHandler.ensure_compiled(module, :module) do
           {:module, module}
         else
           error
         end
-      other -> other
+
+      other ->
+        other
     end
   end
 
@@ -633,7 +838,8 @@ defmodule Code do
       {_module, bin, _beam_path} ->
         do_get_docs(bin, kind)
 
-      :error -> nil
+      :error ->
+        nil
     end
   end
 
@@ -648,19 +854,18 @@ defmodule Code do
       {:ok, {_module, [{@docs_chunk, bin}]}} ->
         lookup_docs(:erlang.binary_to_term(bin), kind)
 
-      {:error, :beam_lib, {:missing_chunk, _, @docs_chunk}} -> nil
+      {:error, :beam_lib, {:missing_chunk, _, @docs_chunk}} ->
+        nil
     end
   end
 
-  defp lookup_docs({:elixir_docs_v1, docs}, kind),
-    do: do_lookup_docs(docs, kind)
+  defp lookup_docs({:elixir_docs_v1, docs}, kind), do: do_lookup_docs(docs, kind)
 
   # unsupported chunk version
   defp lookup_docs(_, _), do: nil
 
   defp do_lookup_docs(docs, :all), do: docs
-  defp do_lookup_docs(docs, kind),
-    do: Keyword.get(docs, kind)
+  defp do_lookup_docs(docs, kind), do: Keyword.get(docs, kind)
 
   ## Helpers
 
@@ -668,11 +873,12 @@ defmodule Code do
   #
   # If the file is found, returns its path in binary, fails otherwise.
   defp find_file(file, relative_to) do
-    file = if relative_to do
-      Path.expand(file, relative_to)
-    else
-      Path.expand(file)
-    end
+    file =
+      if relative_to do
+        Path.expand(file, relative_to)
+      else
+        Path.expand(file)
+      end
 
     if File.regular?(file) do
       file

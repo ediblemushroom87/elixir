@@ -19,7 +19,10 @@ defmodule Kernel.SpecialForms do
   defmacrop error!(args) do
     quote do
       _ = unquote(args)
-      message = "Elixir's special forms are expanded by the compiler and must not be invoked directly"
+
+      message =
+        "Elixir's special forms are expanded by the compiler and must not be invoked directly"
+
       :erlang.error(RuntimeError.exception(message))
     end
   end
@@ -316,7 +319,7 @@ defmodule Kernel.SpecialForms do
   defmacro unquote(:<<>>)(args), do: error!([args])
 
   @doc """
-  Defines a remote call or an alias.
+  Defines a remote call, a call to an anonymous function, or an alias.
 
   The dot (`.`) in Elixir can be used for remote calls:
 
@@ -324,8 +327,16 @@ defmodule Kernel.SpecialForms do
       "foo"
 
   In this example above, we have used `.` to invoke `downcase` in the
-  `String` alias, passing "FOO" as argument. We can also use the dot
-  for creating aliases:
+  `String` module, passing `"FOO"` as argument.
+
+  The dot may be used to invoke anonymous functions too:
+
+      iex> (fn(n) -> n end).(7)
+      7
+
+  in which case there is a function on the left hand side.
+
+  We can also use the dot for creating aliases:
 
       iex> Hello.World
       Hello.World
@@ -360,6 +371,13 @@ defmodule Kernel.SpecialForms do
   a remote call regardless of the quote contents. This decision is also reflected
   in the quoted expressions discussed below.
 
+  When the dot is used to invoke an anonymous function there is only one
+  operand, but it is still written using a postfix notation:
+
+      iex> negate = fn(n) -> -n end
+      iex> negate.(7)
+      -7
+
   ## Quoted expression
 
   When `.` is used, the quoted expression may take two distinct
@@ -378,9 +396,9 @@ defmodule Kernel.SpecialForms do
 
   This tuple follows the general quoted expression structure in Elixir,
   with the name as first argument, some keyword list as metadata as second,
-  and the number of arguments as third. In this case, the arguments is the
-  alias `String` and the atom `:downcase`. The second argument is **always**
-  an atom:
+  and the list of arguments as third. In this case, the arguments are the
+  alias `String` and the atom `:downcase`. The second argument in a remote call
+  is **always** an atom regardless of the literal used in the call:
 
       iex> quote do
       ...>   String."downcase"("FOO")
@@ -389,6 +407,15 @@ defmodule Kernel.SpecialForms do
 
   The tuple containing `:.` is wrapped in another tuple, which actually
   represents the function call, and has `"FOO"` as argument.
+
+  In the case of calls to anonymous functions, the inner tuple with the dot
+  special form has only one argument, reflecting the fact that the operator is
+  unary:
+
+      iex> quote do
+      ...>   negate.(0)
+      ...> end
+      {{:., [], [{:negate, [], __MODULE__}]}, [], [0]}
 
   When the right side is an alias (i.e. starts with uppercase), we get instead:
 
@@ -485,13 +512,12 @@ defmodule Kernel.SpecialForms do
   defmacro alias(module, opts), do: error!([module, opts])
 
   @doc """
-  Requires a given module to be compiled and loaded.
+  Requires a module in order to use its macros.
 
   ## Examples
 
-  Notice that usually modules should not be required before usage,
-  the only exception is if you want to use the macros from a module.
-  In such cases, you need to explicitly require them.
+  Public functions in modules are globally available, but in order to use
+  macros, you need to opt-in by requiring the module they are defined in.
 
   Let's suppose you created your own `if/2` implementation in the module
   `MyMacros`. If you want to invoke it, you need to first explicitly
@@ -549,8 +575,9 @@ defmodule Kernel.SpecialForms do
       import List, only: [flatten: 1]
       import String, except: [split: 2]
 
-  Notice that calling `except` for a previously declared `import/2`
-  simply filters the previously imported elements. For example:
+  Notice that calling `except` is always exclusive on a previously
+  declared `import/2`. If there is no previous import, then it applies
+  to all functions and macros in the module. For example:
 
       import List, only: [flatten: 1, keyfind: 4]
       import List, except: [flatten: 1]
@@ -673,7 +700,7 @@ defmodule Kernel.SpecialForms do
       1
 
   """
-  defmacro ^(var), do: error!([var])
+  defmacro ^var, do: error!([var])
 
   @doc """
   Matches the value on the right against the pattern on the left.
@@ -1378,7 +1405,7 @@ defmodule Kernel.SpecialForms do
       {:__block__, [], [1, 2, 3]}
 
   """
-  defmacro __block__(args), do: error!([args])
+  defmacro unquote(:__block__)(args), do: error!([args])
 
   @doc """
   Captures or creates an anonymous function.
@@ -1414,11 +1441,18 @@ defmodule Kernel.SpecialForms do
       4
 
   In other words, `&(&1 * 2)` is equivalent to `fn x -> x * 2 end`.
-  Another example using a local function:
 
-      iex> fun = &is_atom(&1)
-      iex> fun.(:atom)
-      true
+  We can partially apply a remote function with placeholder:
+
+      iex> take_five = &Enum.take(&1, 5)
+      iex> take_five.(1..10)
+      [1, 2, 3, 4, 5]
+
+  Another example while using an imported or local function:
+
+      iex> first_elem = &elem(&1, 0)
+      iex> first_elem.({0, 1})
+      0
 
   The `&` operator can be used with more complex expressions:
 
@@ -1433,8 +1467,8 @@ defmodule Kernel.SpecialForms do
       {1, 2}
 
       iex> fun = &[&1 | &2]
-      iex> fun.(1, 2)
-      [1 | 2]
+      iex> fun.(1, [2, 3])
+      [1, 2, 3]
 
   The only restrictions when creating anonymous functions is that at
   least one placeholder must be present, i.e. it must contain at least
@@ -1481,7 +1515,7 @@ defmodule Kernel.SpecialForms do
     3. When the head element of aliases is the atom `:Elixir`, no expansion happens.
 
   """
-  defmacro __aliases__(args), do: error!([args])
+  defmacro unquote(:__aliases__)(args), do: error!([args])
 
   @doc """
   Calls the overridden function when overriding it with `Kernel.defoverridable/1`.
@@ -1593,7 +1627,7 @@ defmodule Kernel.SpecialForms do
   defmacro cond(clauses), do: error!([clauses])
 
   @doc ~S"""
-  Evaluates the given expressions and handles any error, exit
+  Evaluates the given expressions and handles any error, exit,
   or throw that may have happened.
 
   ## Examples
@@ -1605,77 +1639,84 @@ defmodule Kernel.SpecialForms do
           IO.puts "Invalid argument given"
       catch
         value ->
-          IO.puts "caught #{value}"
+          IO.puts "Caught #{inspect(value)}"
       else
         value ->
-          IO.puts "Success! The result was #{value}"
+          IO.puts "Success! The result was #{inspect(value)}"
       after
         IO.puts "This is printed regardless if it failed or succeed"
       end
 
-  The rescue clause is used to handle exceptions, while the catch
-  clause can be used to catch thrown values. The else clause can
-  be used to control flow based on the result of the expression.
-  Catch, rescue and else clauses work based on pattern matching.
+  The `rescue` clause is used to handle exceptions while the `catch`
+  clause can be used to catch thrown values and exits.
+  The `else` clause can be used to control flow based on the result of
+  the expression. `catch`, `rescue`, and `else` clauses work based on
+  pattern matching (similar to the `case` special form).
 
   Note that calls inside `try/1` are not tail recursive since the VM
   needs to keep the stacktrace in case an exception happens.
 
-  ## Rescue clauses
+  ## `rescue` clauses
 
-  Besides relying on pattern matching, rescue clauses provides some
-  conveniences around exceptions that allows one to rescue an
-  exception by its name. All the following formats are valid rescue
-  expressions:
+  Besides relying on pattern matching, `rescue` clauses provide some
+  conveniences around exceptions that allow one to rescue an
+  exception by its name. All the following formats are valid patterns
+  in `rescue` clauses:
 
+      # Rescue a single exception without binding the exception
+      # to a variable
       try do
         UndefinedModule.undefined_function
       rescue
         UndefinedFunctionError -> nil
       end
 
+      # Rescue any of the given exception without binding
       try do
         UndefinedModule.undefined_function
       rescue
-        [UndefinedFunctionError] -> nil
+        [UndefinedFunctionError, ArgumentError] -> nil
       end
 
-      # rescue and bind to x
+      # Rescue and bind the exception to the variable "x"
       try do
         UndefinedModule.undefined_function
       rescue
         x in [UndefinedFunctionError] -> nil
       end
 
-      # rescue all and bind to x
+      # Rescue all kinds of exceptions and bind the rescued exception
+      # to the variable "x"
       try do
         UndefinedModule.undefined_function
       rescue
         x -> nil
       end
 
-  ## Erlang errors
+  ### Erlang errors
 
-  Erlang errors are transformed into Elixir ones during rescue:
+  Erlang errors are transformed into Elixir ones when rescuing:
 
       try do
         :erlang.error(:badarg)
       rescue
         ArgumentError -> :ok
       end
+      #=> :ok
 
   The most common Erlang errors will be transformed into their
-  Elixir counter-part. Those which are not will be transformed
-  into `ErlangError`:
+  Elixir counterpart. Those which are not will be transformed
+  into the more generic `ErlangError`:
 
       try do
         :erlang.error(:unknown)
       rescue
         ErlangError -> :ok
       end
+      #=> :ok
 
   In fact, `ErlangError` can be used to rescue any error that is
-  not an Elixir error proper. For example, it can be used to rescue
+  not a proper Elixir error. For example, it can be used to rescue
   the earlier `:badarg` error too, prior to transformation:
 
       try do
@@ -1683,35 +1724,63 @@ defmodule Kernel.SpecialForms do
       rescue
         ErlangError -> :ok
       end
+      #=> :ok
 
-  ## Catching throws and exits
+  ## `catch` clauses
 
-  The catch clause can be used to catch throws values and exits.
+  The `catch` clause can be used to catch thrown values, exits, and errors.
+
+  ### Catching thrown values
+
+  `catch` can be used to catch values thrown by `Kernel.throw/1`:
 
       try do
-        exit(:shutdown)
+        throw(:some_value)
       catch
-        :exit, :shutdown -> IO.puts "Exited with shutdown reason"
+        thrown_value ->
+          IO.puts "A value was thrown: #{inspect(thrown_value)}"
       end
+
+  ### Catching values of any kind
+
+  The `catch` clause also supports catching exits and errors. To do that, it
+  allows matching on both the *kind* of the caught value as well as the value
+  itself:
+
+    try do
+      exit(:shutdown)
+    catch
+      :exit, value
+        IO.puts "Exited with value #{inspect(value)}"
+    end
+
+    try do
+      exit(:shutdown)
+    catch
+      kind, value when kind in [:exit, :throw] ->
+        IO.puts "Caught exit or throw with value #{inspect(value)}"
+    end
+
+  The `catch` clause also supports `:error` alongside `:exit` and `:throw` as
+  in Erlang, although this is commonly avoided in favor of `raise`/`rescue` control
+  mechanisms. One reason for this is that when catching `:error`, the error is
+  not automatically transformed into an Elixir error:
 
       try do
-        throw(:sample)
+        :erlang.error(:badarg)
       catch
-        :throw, :sample ->
-          IO.puts "sample thrown"
+        :error, :badarg -> :ok
       end
+      #=> :ok
 
-  catch values also support `:error`, as in Erlang, although it is
-  commonly avoided in favor of raise/rescue control mechanisms.
-
-  ## After clauses
+  ## `after` clauses
 
   An `after` clause allows you to define cleanup logic that will be invoked both
-  when the tried block of code succeeds and also when an error is raised. Note
-  that the process will exit as usually when receiving an exit signal that causes
+  when the block of code passed to `try/1` succeeds and also when an error is raised. Note
+  that the process will exit as usual when receiving an exit signal that causes
   it to exit abruptly and so the `after` clause is not guaranteed to be executed.
   Luckily, most resources in Elixir (such as open files, ETS tables, ports, sockets,
-  etc.) are linked to or monitor the owning process and will automatically clean
+  and so on) are linked to or monitor the owning process and will automatically clean
   themselves up if that process exits.
 
       File.write!("tmp/story.txt", "Hello, World")
@@ -1721,9 +1790,9 @@ defmodule Kernel.SpecialForms do
         File.rm("tmp/story.txt")
       end
 
-  ## Else clauses
+  ## `else` clauses
 
-  Else clauses allow the result of the expression to be pattern
+  `else` clauses allow the result of the body passed to `try/1` to be pattern
   matched on:
 
       x = 2
@@ -1739,7 +1808,7 @@ defmodule Kernel.SpecialForms do
           :large
       end
 
-  If an else clause is not present and no exceptions are raised,
+  If an `else` clause is not present and no exceptions are raised,
   the result of the expression will be returned:
 
       x = 1
@@ -1751,16 +1820,16 @@ defmodule Kernel.SpecialForms do
             :infinity
         end
 
-  However, when an else clause is present but the result of the expression
-  does not match any of the patterns an exception will be raised. This
-  exception will not be caught by a catch or rescue in the same try:
+  However, when an `else` clause is present but the result of the expression
+  does not match any of the patterns then an exception will be raised. This
+  exception will not be caught by a `catch` or `rescue` in the same `try`:
 
       x = 1
       try do
         try do
           1 / x
         rescue
-          # The TryClauseError can not be rescued here:
+          # The TryClauseError cannot be rescued here:
           TryClauseError ->
             :error_a
         else
@@ -1773,8 +1842,8 @@ defmodule Kernel.SpecialForms do
           :error_b
       end
 
-  Similarly, an exception inside an else clause is not caught or rescued
-  inside the same try:
+  Similarly, an exception inside an `else` clause is not caught or rescued
+  inside the same `try`:
 
       try do
         try do
@@ -1794,9 +1863,24 @@ defmodule Kernel.SpecialForms do
       end
 
   This means the VM no longer needs to keep the stacktrace once inside
-  an else clause and so tail recursion is possible when using a `try`
-  with a tail call as the final call inside an else clause. The same
+  an `else` clause and so tail recursion is possible when using a `try`
+  with a tail call as the final call inside an `else` clause. The same
   is true for `rescue` and `catch` clauses.
+
+  Only the result of the tried expression falls down to the `else` clause.
+  If the `try` ends up in the `rescue` or `catch` clauses, their result
+  will not fall down to `else`:
+
+      try do
+        throw(:catch_this)
+      catch
+        :throw, :catch_this ->
+          :it_was_caught
+      else
+        # :it_was_caught will not fall down to this "else" clause.
+        other ->
+          {:else, other}
+      end
 
   ## Variable handling
 
@@ -1864,14 +1948,18 @@ defmodule Kernel.SpecialForms do
       end
 
   The `after` clause can be specified even if there are no match clauses.
-  The timeout value given to `after` can be a variable; two special
-  values are allowed:
+  The timeout value given to `after` can be any expression evaluating to
+  one of the allowed values:
 
     * `:infinity` - the process should wait indefinitely for a matching
       message, this is the same as not using a timeout
 
     * `0` - if there is no matching message in the mailbox, the timeout
       will occur immediately
+
+    * positive integer smaller than `4_294_967_295` (`0xFFFFFFFF`
+      in hex notation) - it should be possible to represent the timeout
+      value as an unsigned 32-bit integer.
 
   ## Variables handling
 

@@ -10,7 +10,6 @@ goto parseopts
 :documentation
 echo Usage: %~nx0 [options] [.exs file] [data]
 echo.
-echo   -v                          Prints version and exits
 echo   -e COMMAND                  Evaluates the given command (*)
 echo   -r FILE                     Requires the given files/patterns (*)
 echo   -S SCRIPT                   Finds and executes the given script in PATH
@@ -22,12 +21,14 @@ echo   --app APP                   Starts the given app and its dependencies (*)
 echo   --cookie COOKIE             Sets a cookie for this distributed node
 echo   --detached                  Starts the Erlang VM detached from console
 echo   --erl SWITCHES              Switches to be passed down to Erlang (*)
+echo   --help, -h                  Prints this message and exits
 echo   --hidden                    Makes a hidden node
 echo   --logger-otp-reports BOOL   Enables or disables OTP reporting
 echo   --logger-sasl-reports BOOL  Enables or disables SASL reporting
 echo   --name NAME                 Makes and assigns a name to the distributed node
 echo   --no-halt                   Does not halt the Erlang VM after execution
 echo   --sname NAME                Makes and assigns a short name to the distributed node
+echo   --version, -v               Prints Elixir version and exits
 echo   --werl                      Uses Erlang's Windows shell GUI
 echo.
 echo ** Options marked with (*) can be given more than once
@@ -87,7 +88,7 @@ if """"=="%par:--sname=%"               (set parsErlang=%parsErlang% -sname %1 &
 if """"=="%par:--name=%"                (set parsErlang=%parsErlang% -name %1 && shift)
 if """"=="%par:--logger-otp-reports=%"  (set parsErlang=%parsErlang% -logger handle_otp_reports %1 && shift)
 if """"=="%par:--logger-sasl-reports=%" (set parsErlang=%parsErlang% -logger handle_sasl_reports %1 && shift)
-if """"=="%par:--erl=%"                 (set beforeExtra=%beforeExtra% %~1 && shift)
+if """"=="%par:--erl=%"                 (set "beforeExtra=%beforeExtra% %~1" && shift)
 goto:startloop
 
 rem ******* assume all pre-params are parsed ********************
@@ -99,27 +100,6 @@ for  /d %%d in ("%originPath%..\lib\*.") do (
   set ext_libs=!ext_libs! -pa "%%~fd\ebin"
 )
 setlocal disabledelayedexpansion
-
-rem ******* detect ANSI terminal support ********************
-timeout 0 2>nul >nul || goto run
-where /Q powershell || goto run
-
-set ASSERT_ANSI= ^
-  $err = 1; ^
-  $Kernel32 = Add-Type -Name 'Kernel32' -PassThru -MemberDefinition ' ^
-    [DllImport(\"Kernel32.dll\", SetLastError = true)] ^
-    public static extern IntPtr GetStdHandle(int nStdHandle); ^
-    [DllImport(\"Kernel32.dll\", SetLastError = true)] ^
-    public static extern bool GetConsoleMode(IntPtr hWnd, ref UInt32 lpMode); ^
-  '; ^
-  $StdoutHandle = $Kernel32::GetStdHandle(-11); ^
-  $ConsoleMode = New-Object -TypeName UInt32; ^
-  $null = $Kernel32::GetConsoleMode($StdoutHandle, [ref]$ConsoleMode); ^
-  if ($ConsoleMode -band 0x4) { $err = 0 } ^
-  exit $err
-
-powershell -NoProfile -NonInteractive -Command %ASSERT_ANSI% || goto run
-set parsErlang=%parsErlang% -elixir ansi_enabled true
 
 :run
 if not %runMode% == "iex" (

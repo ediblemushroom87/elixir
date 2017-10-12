@@ -1,4 +1,4 @@
-Code.require_file "test_helper.exs", __DIR__
+Code.require_file("test_helper.exs", __DIR__)
 
 defmodule ListTest do
   use ExUnit.Case, async: true
@@ -10,8 +10,8 @@ defmodule ListTest do
   end
 
   test "optional comma" do
-    assert [1] == [1,]
-    assert [1, 2, 3] == [1, 2, 3,]
+    assert Code.eval_string("[1,]") == {[1], []}
+    assert Code.eval_string("[1, 2, 3,]") == {[1, 2, 3], []}
   end
 
   test "partial application" do
@@ -138,6 +138,7 @@ defmodule ListTest do
     for index <- [-1, 0, 1] do
       assert List.delete_at([], index) == []
     end
+
     assert List.delete_at([1, 2, 3], 0) == [2, 3]
     assert List.delete_at([1, 2, 3], 2) == [1, 2]
     assert List.delete_at([1, 2, 3], 3) == [1, 2, 3]
@@ -150,6 +151,7 @@ defmodule ListTest do
     for index <- [-1, 0, 1] do
       assert List.pop_at([], index) == {nil, []}
     end
+
     assert List.pop_at([1], 1, 2) == {2, [1]}
     assert List.pop_at([1, 2, 3], 0) == {1, [2, 3]}
     assert List.pop_at([1, 2, 3], 2) == {3, [1, 2]}
@@ -159,17 +161,55 @@ defmodule ListTest do
     assert List.pop_at([1, 2, 3], -4) == {nil, [1, 2, 3]}
   end
 
+  describe "starts_with?/2" do
+    test "list and prefix are equal" do
+      assert List.starts_with?([], [])
+      assert List.starts_with?([1], [1])
+      assert List.starts_with?([1, 2, 3], [1, 2, 3])
+    end
+
+    test "proper lists" do
+      refute List.starts_with?([1], [1, 2])
+      assert List.starts_with?([1, 2, 3], [1, 2])
+      refute List.starts_with?([1, 2, 3], [1, 2, 3, 4])
+    end
+
+    test "list is empty" do
+      refute List.starts_with?([], [1])
+      refute List.starts_with?([], [1, 2])
+    end
+
+    test "prefix is empty" do
+      assert List.starts_with?([1], [])
+      assert List.starts_with?([1, 2], [])
+      assert List.starts_with?([1, 2, 3], [])
+    end
+
+    test "only accepts lists" do
+      message = "no function clause matching in List.starts_with?/2"
+
+      assert_raise FunctionClauseError, message, fn ->
+        List.starts_with?([1 | 2], [1 | 2])
+      end
+
+      message = "no function clause matching in List.starts_with?/2"
+
+      assert_raise FunctionClauseError, message, fn ->
+        List.starts_with?([1, 2], 1)
+      end
+    end
+  end
+
   test "to_string/1" do
     assert List.to_string([?æ, ?ß]) == "æß"
     assert List.to_string([?a, ?b, ?c]) == "abc"
 
-    assert_raise UnicodeConversionError,
-                 "invalid code point 57343", fn ->
+    assert_raise UnicodeConversionError, "invalid code point 57343", fn ->
       List.to_string([0xDFFF])
     end
-    assert_raise UnicodeConversionError,
-                 "invalid encoding starting at <<216, 0>>", fn ->
-      List.to_string(["a", "b", <<0xD800 :: size(16)>>])
+
+    assert_raise UnicodeConversionError, "invalid encoding starting at <<216, 0>>", fn ->
+      List.to_string(["a", "b", <<0xD800::size(16)>>])
     end
 
     assert_raise ArgumentError, ~r"cannot convert the given list to a string", fn ->

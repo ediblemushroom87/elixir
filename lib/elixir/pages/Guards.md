@@ -11,7 +11,7 @@ For reference, the following is a comprehensive list of all expressions allowed 
   * arithmetic binary operators (`+`, `-`, `*`, `/`)
   * arithmetic unary operators (`+`, `-`)
   * binary concatenation operator (`<>`)
-  * `in` operator (as long as the right-hand side is a list or a range)
+  * `in` and `not in` operators (as long as the right-hand side is a list or a range)
   * the following "type-check" functions (all documented in the `Kernel` module):
     * `is_atom/1`
     * `is_binary/1`
@@ -104,14 +104,14 @@ Other constructs are `for`, `with`, `try`/`rescue`/`catch`/`else`/, and the `mat
 
 ## Failing guards
 
-Errors in guards do not result in a runtime error, but in the erroring guard fail. For example, the `length/1` function only works with lists, and if we use it on anything else it fails:
+Errors in guards do not result in runtime errors, but in guards failing. For example, the `length/1` function only works with lists. If we use it with anything else, a runtime error is raised:
 
 ```elixir
 iex> length("hello")
 ** (ArgumentError) argument error
 ```
 
-However, when used in guards, it simply makes the corresponding clause fail (i.e., not match):
+However, when used in guards, the corresponding clause simply fails to match:
 
 ```elixir
 iex> case "hello" do
@@ -123,7 +123,7 @@ iex> case "hello" do
 :length_failed
 ```
 
-In many cases, we can take advantage of this: in the code above, for example, we can use `length/1` to both check that the given thing is a list *and* check some properties of its length (instead of using `is_list(something) and length(something) > 0`).
+In many cases, we can take advantage of this. In the code above, we used `length/1` to both check that the given thing is a list *and* check some properties of its length (instead of using `is_list(something) and length(something) > 0`).
 
 ## Expressions in guard clauses
 
@@ -143,7 +143,7 @@ def my_function(number) when is_integer(number) and rem(number, 2) == 0 do
 end
 ```
 
-This would be repetitive to write everytime we need this check, so, as mentioned at the beginning of this section, we can abstract this away using a macro. Remember that defining a function that performs this check wouldn't work because we can't use custom functions in guards. Our macro would look like this:
+This would be repetitive to write every time we need this check, so, as mentioned at the beginning of this section, we can abstract this away using a macro. Remember that defining a function that performs this check wouldn't work because we can't use custom functions in guards. Our macro would look like this:
 
 ```elixir
 defmodule MyInteger do
@@ -191,4 +191,32 @@ def foo(_other) do
 end
 ```
 
-The two forms are exactly the same semantically but there are cases where the latter one may be more aesthetically pleasing.
+For most cases, the two forms are exactly the same. However, there exists a subtle difference in the case of failing guards, as discussed in the section above.
+In case of a boolean expression guard, a failed element means the whole guard fails. In case of multiple guards it means the next one will be evaluated.
+The difference can be highlighted with an example:
+
+```elixir
+def multiguard(value)
+    when map_size(value) < 1
+    when tuple_size(value) < 1 do
+  :guard_passed
+end
+def multiguard(_value) do
+  :guard_failed
+end
+
+def boolean(value) when map_size(value) < 1 or tuple_size(value) < 1 do
+  :guard_passed
+end
+def boolean(value) do
+  :guard_failed
+end
+
+multiguard(%{}) #=> :guard_passed
+multiguard({})  #=> :guard_passed
+
+boolean(%{}) #=> :guard_passed
+boolean({})  #=> :guard_failed
+```
+
+For cases where guards do not rely on the failing guard behavior the two forms are exactly the same semantically but there are cases where multiple guard clauses may be more aesthetically pleasing.
